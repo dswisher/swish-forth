@@ -48,13 +48,17 @@ See [docs/setup.md](docs/setup.md) for installation instructions.
 | Lab | Topic |
 |-----|-------|
 | [01](docs/lab-01.md) | Hello, X16 - toolchain and first assembly program |
-| 02 | Memory map and threading model *(coming soon)* |
+| [02](docs/lab-02.md) | Memory map and threading model |
+| 03 | The inner interpreter: NEXT, DOCOL, EXIT *(coming soon)* |
+| 04 | Primitive words: stack ops, arithmetic, memory access *(coming soon)* |
+| 05 | The dictionary and FIND *(coming soon)* |
+| 06 | The outer interpreter: INTERPRET, number parsing, the FORTH prompt *(coming soon)* |
 
 ## References
 
 - [jonesforth](https://github.com/nornagon/jonesforth) - A well-commented FORTH
   in x86 assembly; excellent conceptual reference
-- [6502.org FORTH resources](http://www.6502.org/source/interpreters/forth.htm)
+- [6502.org source code library](http://www.6502.org/source/) - includes FIG FORTH kernel and other 6502 FORTH resources
 - [Commander X16 documentation](https://github.com/X16Community/x16-docs)
-- *Starting FORTH* by Leo Brodie - the classic FORTH introduction
+- [*Starting FORTH*](https://www.forth.com/wp-content/uploads/2018/01/Starting-FORTH.pdf) by Leo Brodie - the classic FORTH introduction
 - *Threaded Interpretive Languages* by R. G. Loeliger - low-level implementation detail
