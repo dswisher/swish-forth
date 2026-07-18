@@ -276,6 +276,16 @@ You will see the KERNAL jump table - a series of `JMP` instructions at fixed
 addresses. These are the KERNAL routines we call with `JSR`. Find `$FFD2`
 (`CHROUT`) and `$FFCC` (`CLRCHN`) in the listing.
 
+> **Note**: The monitor's `RO` column shows the active ROM bank. The emulator
+> boots with ROM bank `04` (BASIC), not bank `00` (KERNAL). If `RO` shows
+> anything other than `00`, you will not see `JMP` instructions - you will see
+> whatever code lives in the active bank at those addresses instead. Switch to
+> the KERNAL bank first with:
+> ```
+> O 00
+> ```
+> Then run `D FF80 FFFF` and the jump table will appear correctly.
+
 ### Viewing and modifying registers
 
 The `R` command shows registers (same as the header line). You can also modify
