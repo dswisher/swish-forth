@@ -43,11 +43,12 @@ well-documented approach that maps cleanly to the 6502.
 
 See [docs/setup.md](docs/setup.md) for installation instructions.
 
-## Lessons
+## Labs
 
-| Lesson | Topic |
-|--------|-------|
-| [01](docs/lesson-01.md) | Memory map and threading model *(coming soon)* |
+| Lab | Topic |
+|-----|-------|
+| [01](docs/lab-01.md) | Hello, X16 - toolchain and first assembly program |
+| 02 | Memory map and threading model *(coming soon)* |
 
 ## References
 

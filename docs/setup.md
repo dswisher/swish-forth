@@ -32,25 +32,33 @@ Download the latest release from the
 [x16-emulator releases page](https://github.com/X16Community/x16-emulator/releases).
 Look for the macOS binary (e.g., `x16emu-mac-r48.zip` or similar).
 
-Unzip and move the binary somewhere on your PATH, for example:
+Unzip and install the binary and ROM into your home directory:
 
 ```zsh
 unzip x16emu-mac-*.zip -d x16emu
-sudo mv x16emu/x16emu /usr/local/bin/
+mkdir -p ~/.local/bin
+mkdir -p ~/.local/share/x16
+cp x16emu/x16emu ~/.local/bin/
+cp x16emu/rom.bin ~/.local/share/x16/
 ```
 
-You also need the ROM file (`rom.bin`), which ships in the same zip. Keep it
-in a known location - the emulator needs it at startup:
+Make sure `~/.local/bin` is on your PATH. Add this to `~/.zshrc` if it isn't
+already:
 
 ```zsh
-mkdir -p ~/.x16
-mv x16emu/rom.bin ~/.x16/
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Then reload your shell:
+
+```zsh
+source ~/.zshrc
 ```
 
 Verify:
 
 ```zsh
-x16emu -rom ~/.x16/rom.bin
+x16emu -rom ~/.local/share/x16/rom.bin
 ```
 
 The emulator window should open to the X16 BASIC prompt.
@@ -58,7 +66,7 @@ The emulator window should open to the X16 BASIC prompt.
 > **Note**: macOS may quarantine the downloaded binary. If you see a security
 > warning, run:
 > ```zsh
-> xattr -d com.apple.quarantine /usr/local/bin/x16emu
+> xattr -d com.apple.quarantine ~/.local/bin/x16emu
 > ```
 
 ---
@@ -96,15 +104,23 @@ Download the Linux binary from the
 
 ```bash
 unzip x16emu-linux-r*.zip -d x16emu
-mkdir -p ~/.x16
-mv x16emu/rom.bin ~/.x16/
-sudo mv x16emu/x16emu /usr/local/bin/
+mkdir -p ~/.local/bin
+mkdir -p ~/.local/share/x16
+cp x16emu/x16emu ~/.local/bin/
+cp x16emu/rom.bin ~/.local/share/x16/
+```
+
+`~/.local/bin` is typically on the PATH by default on most Linux distributions.
+If it isn't, add this to `~/.bashrc` or `~/.zshrc`:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
 ```
 
 Verify:
 
 ```bash
-x16emu -rom ~/.x16/rom.bin
+x16emu -rom ~/.local/share/x16/rom.bin
 ```
 
 ---
@@ -158,7 +174,7 @@ emulator without burning them to a disk image.
 Start the emulator with the `-sdcard` flag pointing at a directory:
 
 ```zsh
-x16emu -rom ~/.x16/rom.bin -sdcard /path/to/swish-forth/forth
+x16emu -rom ~/.local/share/x16/rom.bin -sdcard /path/to/swish-forth/forth
 ```
 
 Any files in that directory are visible to the X16 as files on drive 8.
@@ -168,7 +184,7 @@ there by your editor on the host.
 A convenience shell alias (add to `~/.zshrc` on Mac/Linux):
 
 ```zsh
-alias x16='x16emu -rom ~/.x16/rom.bin -sdcard /path/to/swish-forth/forth'
+alias x16='x16emu -rom ~/.local/share/x16/rom.bin -sdcard /path/to/swish-forth/forth'
 ```
 
 ---
