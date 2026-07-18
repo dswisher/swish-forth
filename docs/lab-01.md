@@ -121,10 +121,17 @@ A few things to note:
 - `CHROUT` expects the character in the **accumulator** (`A` register)
 - The message is null-terminated (`0` byte at the end) - use that to know
   when to stop
-- To index through the string, the **`Y` register** with zero-page indirect
-  or absolute indexed addressing is the natural 6502 approach. There are
-  multiple ways to do this; pick whichever feels right.
+- Either `X` or `Y` can index through a string using absolute indexed
+  addressing (`lda message,x` or `lda message,y`). The difference matters in
+  indirect addressing modes: only Y supports indirect indexed `lda (ptr),y`,
+  which is the 6502 workhorse for pointer-based access. In FORTH we will use
+  that pattern constantly, so Y is worth getting comfortable with - but for
+  a simple labeled string either register works fine.
 - `CLRCHN` resets I/O channels - good practice to call before returning to BASIC
+- For short loops, `jmp loop` is correct and clear. The 65C02 (which the X16
+  uses) adds a true unconditional relative branch `bra`, but ca65 requires
+  `--cpu 65c02` to enable it. This course targets the base 6502 instruction
+  set for portability, so `jmp` is preferred throughout.
 
 ### Part 2 - The Linker Config
 

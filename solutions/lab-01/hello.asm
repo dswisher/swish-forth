@@ -11,7 +11,7 @@ CLRCHN = $FFCC
 ; --- BASIC stub ---
 ; This sits at $0801 and tricks BASIC into thinking there is a one-line
 ; BASIC program that reads: 10 SYS 2061
-; $2061 is the start of our actual code (just after the stub).
+; $080D is the start of our actual code (just after the stub).
 
 .segment "BASICSTUB"
     .word $080D         ; pointer to next BASIC line
@@ -25,21 +25,17 @@ CLRCHN = $FFCC
 .segment "CODE"
 
 main:
-    ; Your code here:
-    ; Loop through the message and call CHROUT for each character,
-    ; then call CLRCHN and RTS.
-    ldx #0
-    lda message,x
+    ldx #0              ; index into the string
 loop:
-    jsr CHROUT
-    inx
-    lda message,x
-    beq done
-    jmp loop
+    lda message,x       ; get the character based on the index
+    beq done            ; if zero, we're done
+    jsr CHROUT          ; spit out the character
+    inx                 ; bump the index
+    jmp loop            ; go around again
 
 done:
-    jsr CLRCHN
-    rts
+    jsr CLRCHN          ; it is polite to make sure the I/O channels are reset
+    rts                 ; back to BASIC
 
 message:
     .byte "HELLO, X16!", $0D, 0
