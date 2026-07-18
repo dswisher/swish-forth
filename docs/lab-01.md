@@ -85,20 +85,24 @@ in:
 CHROUT = $FFD2
 CLRCHN = $FFCC
 
+; --- PRG header ---
+.segment "HEADER"
+    .word $0801             ; PRG load address
+
 ; --- BASIC stub ---
 ; This sits at $0801 and tricks BASIC into thinking there is a one-line
 ; BASIC program that reads: 10 SYS 2061
-; $2061 is the start of our actual code (just after the stub).
+; $080D is the start of our actual code (just after the stub).
 
 .segment "BASICSTUB"
-    .word $080B         ; pointer to next BASIC line
+    .word $080D         ; pointer to next BASIC line
     .word 10            ; line number 10
     .byte $9E           ; BASIC token for SYS
     .byte "2061"        ; address as ASCII digits
     .byte 0             ; end of BASIC line
     .word 0             ; end of BASIC program
 
-; --- Our code starts here ($080B) ---
+; --- Our code starts here ($080D) ---
 .segment "CODE"
 
 main:
@@ -109,7 +113,7 @@ main:
     rts
 
 message:
-    .byte "Hello, X16!", $0D, 0
+    .byte "HELLO, X16!", $0D, 0
 ```
 
 A few things to note:
@@ -130,40 +134,32 @@ You control this with a linker config file.
 
 Create `hello.cfg`. You need to define:
 
-- A **memory region** called `RAM` starting at `$0801`
-- Two **segments**: `BASICSTUB` and `CODE`, both placed in `RAM`
-- The output file should have a **two-byte header** containing the load
-  address `$0801` (this is what makes it a valid PRG file)
-
-Here is the skeleton:
+- A **`HEADER` memory region** for the two-byte PRG load address, written
+  first in the output file but not loaded into RAM
+- A **`RAM` memory region** starting at `$0801`
+- Three **segments**: `HEADER`, `BASICSTUB`, and `CODE`
 
 ```
 MEMORY {
-    RAM: start = $0801, size = $F000, file = %O;
+    HEADER: start = $0000, size = 2,     file = %O;
+    RAM:    start = $0801, size = $F000, file = %O;
 }
 
 SEGMENTS {
-    BASICSTUB: load = RAM, type = ro;
-    CODE:      load = RAM, type = rw;
+    HEADER:    load = HEADER, type = ro;
+    BASICSTUB: load = RAM,    type = ro;
+    CODE:      load = RAM,    type = rw;
 }
 ```
 
-The `file = %O` tells ld65 to write this region to the output file.
-The PRG header (the two-byte load address) is added by passing `--target none`
-and using a `FEATURES` block - see the stretch goal below, or look at the
-[ld65 documentation](https://cc65.github.io/doc/ld65.html) for the `CONDES`
-and `STARTADDRESS` features.
+The `file = %O` tells ld65 to write this region to the output file. The two
+memory regions are written in order: `HEADER` first (two bytes), then `RAM`
+(your code). This is what makes it a valid PRG file.
 
-> **Hint**: The simplest way to produce the PRG header with ld65 is to add
-> a `FEATURES` section to your config:
-> ```
-> FEATURES {
->     STARTADDRESS: default = $0801;
-> }
-> ```
-> and pass `--start-addr $0801` to ld65. Alternatively, emit the two header
-> bytes manually as `.word $0801` at the very top of `BASICSTUB` - this is
-> less elegant but works fine for now.
+> **Note**: The `HEADER` region uses `start = $0000` as a placeholder - that
+> address is never actually loaded into RAM. Only the `RAM` region is loaded
+> by the emulator; `HEADER` just contributes its two bytes to the front of the
+> output file.
 
 ### Part 3 - The Makefile
 
@@ -180,17 +176,6 @@ Create a `Makefile` that has at least these targets:
 > ```
 > ld65 -o hello.prg ...
 > ```
-
-> **Note**: `$` is a special character in Makefiles (it introduces variable
-> references). To pass a literal `$` to a shell command, double it: `$$`.
-> So `--start-addr $0801` in a Makefile rule must be written as
-> `--start-addr $$0801`. Alternatively, define it as a Make variable to keep
-> things readable:
-> ```makefile
-> LOAD_ADDR = 0x0801
-> ```
-> ld65 accepts hex addresses with either `$` or `0x` prefix, so using `0x`
-> in the Makefile sidesteps the escaping issue entirely.
 
 For the `run` target, the emulator can auto-run a PRG file at startup with
 the `-prg` and `-run` flags:
@@ -209,8 +194,15 @@ make
 make run
 ```
 
-You should see `Hello, X16!` printed on the X16 screen, followed by the
+You should see `HELLO, X16!` printed on the X16 screen, followed by the
 BASIC `READY.` prompt.
+
+> **Note**: The X16 boots in "uppercase/graphics" mode, where the byte values
+> used by lowercase ASCII letters (`$61`-`$7A`) are mapped to graphic and
+> line-drawing characters instead. Use uppercase in your message to avoid this.
+> Lowercase can be enabled by sending the PETSCII control code `$0E` to
+> `CHROUT` before printing, but uppercase is the natural fit for this
+> environment and is conventional in FORTH.
 
 ---
 
@@ -231,6 +223,11 @@ you work through later labs:
    `TYPE` word (print a string of known length). How does null-termination
    differ from FORTH's counted strings, and which is more convenient in a
    FORTH system?
+
+4. The X16 boots in uppercase/graphics mode. If you wanted to enable
+   lowercase, you could send `$0E` to `CHROUT` at startup. Where in your
+   program would you add that, and why does it matter that it happens before
+   any output?
 
 ---
 

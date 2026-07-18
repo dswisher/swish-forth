@@ -21,7 +21,7 @@ CLRCHN = $FFCC
     .byte 0             ; end of BASIC line
     .word 0             ; end of BASIC program
 
-; --- Our code starts here ($080B) ---
+; --- Our code starts here ($080D) ---
 .segment "CODE"
 
 main:
@@ -30,13 +30,17 @@ main:
     ; then call CLRCHN and RTS.
     ldx #0
     lda message,x
+loop:
     jsr CHROUT
-    lda #$0D
-    jsr CHROUT
+    inx
+    lda message,x
+    beq done
+    jmp loop
 
-    ; jsr CLRCHN
+done:
+    jsr CLRCHN
     rts
 
 message:
-    .byte "Hello, X16!", $0D, 0
+    .byte "HELLO, X16!", $0D, 0
 
