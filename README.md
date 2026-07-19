@@ -53,7 +53,7 @@ See [docs/setup.md](docs/setup.md) for installation instructions.
 | [04](docs/lab-04.md) | Colon definitions: DOCOL and EXIT |
 | [05](docs/lab-05.md) | Primitive words: stack ops, arithmetic, memory access |
 | [06](docs/lab-06.md) | LIT, the dictionary, and FIND |
-| 07 | The outer interpreter: INTERPRET, number parsing, the FORTH prompt *(coming soon)* |
+| [07](docs/lab-07.md) | The outer interpreter: EMIT, KEY, WORD, NUMBER, INTERPRET |
 
 ## References
 
