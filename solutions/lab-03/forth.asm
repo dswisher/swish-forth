@@ -1,4 +1,4 @@
-; forth.asm - lab 2: NEXT
+; forth.asm - lab 3: NEXT
 
 ; --- PRG stub ---
 .segment "HEADER"
