@@ -11,10 +11,10 @@ debug: forth.prg
 	$(RUN) -debug 0x080d
 
 clean:
-	rm -f forth.prg forth.o
+	rm -f forth.prg forth.o forth.lst
 
 forth.o: forth.asm
-	ca65 forth.asm
+	ca65 forth.asm -l forth.lst
 
 forth.prg: forth.o forth.cfg
 	ld65 -C forth.cfg -o forth.prg forth.o

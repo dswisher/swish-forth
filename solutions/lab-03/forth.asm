@@ -20,6 +20,7 @@
 ; Zero page layout
 W   = $22       ; working register (2 bytes: $22-$23)
 IP  = $24       ; instruction pointer (2 bytes: $24-$25)
+WX  = $26       ; scratch register for NEXT (2 bytes: $26-$27)
 
 ; The NEXT macro, which appears at the end of every primitive
 .macro NEXT
@@ -33,10 +34,17 @@ IP  = $24       ; instruction pointer (2 bytes: $24-$25)
     lda IP
     adc #2
     sta IP
-    bcc :+          ; branch to the anonymous label 2 lines below
+    bcc @no_carry
     inc IP+1
-:
-    jmp (W)         ; jump to the address stored at W
+@no_carry:
+    ; W holds the CFA address - read through it to get the code address
+    ldy #0
+    lda (W),y       ; WX_lo = memory[W]
+    sta WX
+    iny
+    lda (W),y       ; WX_hi = memory[W+1]
+    sta WX+1
+    jmp (WX)        ; W -> CFA -> Code
 .endmacro
 
 ; --- Our code starts here ($080D) ---
