@@ -3,5 +3,6 @@
 
 *.o
 *.prg
-*.lst
+forth.lst
+forth.dbg
 

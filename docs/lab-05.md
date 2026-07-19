@@ -37,46 +37,53 @@ track the top.
 
 ### Stack Layout
 
-We will place the parameter stack in the range `$00F0`-`$00FF` (the top of
-zero page), growing **downward** from `$00FE`. Each entry is 2 bytes (lo, hi).
-X points to the **low byte of the top of stack (TOS)**.
+We will place the parameter stack in zero page at `$C0`-`$FF` (64 bytes,
+room for 32 cells), growing **downward**. Each entry is 2 bytes: lo byte at
+the lower address, hi byte at the next address up. X points to the **lo byte
+of the top of stack (TOS)**.
+
+With the stack empty, X = `$FF`. After pushing one item, X decrements by 2
+to `$FD`; TOS lo is at `$FD`, TOS hi at `$FE`. After pushing a second item,
+X = `$FB`:
 
 ```
-Address   Contents
-$00FE     TOS lo byte     <- X points here when one item on stack
-$00FF     TOS hi byte
-$00FC     NOS lo byte     (Next On Stack)
-$00FD     NOS hi byte
-  ...
+$FF   (X starts here; stack empty)
+$FE   hi byte  \  first item pushed; TOS when one item on stack
+$FD   lo byte  /  <- X = $FD with one item
+$FC   hi byte  \  second item pushed; TOS when two items on stack
+$FB   lo byte  /  <- X = $FB with two items; first item is now NOS
+ ...
+$C1   ]
+$C0   ]  deeper stack items
 ```
 
-Pushing a 16-bit value:
+Pushing a 16-bit value decrements X by 2, then stores lo and hi:
 
 ```asm
-dex             ; make room (2 bytes)
 dex
-sta PSP+0,x    ; store lo
-tya            ; (value hi byte in Y here, by convention)
-sta PSP+1,x    ; store hi
+dex
+sta PSP+0,x     ; store lo byte  (at X)
+tya             ; (value hi byte in Y here, by convention)
+sta PSP+1,x     ; store hi byte  (at X+1)
 ```
 
-Popping a 16-bit value:
+Popping a 16-bit value loads lo and hi, then increments X by 2:
 
 ```asm
-lda PSP+0,x    ; load lo
-ldy PSP+1,x    ; load hi
-inx            ; discard (2 bytes)
+lda PSP+0,x     ; load lo byte
+ldy PSP+1,x     ; load hi byte
+inx
 inx
 ```
 
 We will define:
 
 ```asm
-PSP = $00       ; base address of parameter stack page; X is the offset
+PSP = $00       ; base address; X is the offset, so PSP+0,x = $00+X = X
 ```
 
-With X as the offset into zero page, `lda $00,x` uses the zero-page indexed
-addressing mode, which is fast and compact.
+With `PSP = $00`, `lda PSP+0,x` assembles to `lda $00,x` - zero-page indexed
+addressing, which is fast and compact.
 
 > **Note on register conventions**: In this lab we use A for the low byte and
 > Y for the high byte of a 16-bit value when moving data on and off the stack.
@@ -85,19 +92,7 @@ addressing mode, which is fast and compact.
 
 ### Stack Initialization
 
-Before any FORTH word executes, X must be initialized to a sensible value.
-We choose `$FF` as the initial stack pointer, meaning the stack is empty.
-The first `PUSH` will decrement X to `$FD`, so the first item occupies
-`$FD`/`$FE`.
-
-Wait - that is only one byte of room at the top. Let's think more carefully.
-
-With X pointing at the low byte of TOS:
-- Empty stack: X = `$FF` (or some sentinel value above the stack region)
-- After one push: X = `$FD`, TOS lo at `$FD`, TOS hi at `$FE`
-- After two pushes: X = `$FB`, NOS lo at `$FB`, NOS hi at `$FC`
-
-So initialize X to `$FF` and the first push drops it to `$FD`.
+In `main`, initialize X to `$FF` before entering the interpreter:
 
 ```asm
 ldx #$FF        ; empty parameter stack
@@ -118,7 +113,7 @@ code_dup:
     sta PSP+0,x     ; push copy lo
     tya
     sta PSP+1,x     ; push copy hi
-    jmp NEXT
+    NEXT
 ```
 
 Work through this carefully. After `dex / dex`, X has moved down by 2. We
@@ -135,7 +130,7 @@ cfa_drop:
 code_drop:
     inx
     inx
-    jmp NEXT
+    NEXT
 ```
 
 ### Implementing SWAP
@@ -255,22 +250,9 @@ overwrite inside a primitive?
 ### Part 5 - Test Thread
 
 Replace the old test thread with one that exercises your new primitives.
-Here is a suggested sequence:
-
-```asm
-test_thread:
-    .word cfa_lit, $0003, $0000     ; push 3 (lo=$03, hi=$00)
-    .word cfa_lit, $0005, $0000     ; push 5
-    .word cfa_plus                  ; add -> 8
-    .word cfa_dup                   ; dup -> 8 8
-    .word cfa_drop                  ; drop -> 8
-    .word cfa_exit
-```
-
-Wait - `LIT` has not been implemented yet. For now, hand-initialize the
-stack in `main` by pushing one or two known values onto it directly in
-assembly before jumping to `NEXT`. Then write a thread that operates on
-those values.
+Since `LIT` (the primitive that pushes inline literals from the thread) is not
+implemented yet, pre-load the stack with known values directly in `main` before
+entering the interpreter.
 
 For example, to pre-load the stack with 3 and 5 (5 on top):
 
@@ -299,12 +281,19 @@ main:
     sta IP
     lda #>test_thread
     sta IP+1
-    jmp NEXT
+    NEXT
 ```
 
-Then write a test thread that calls `+`, `DUP`, `SWAP`, etc. on those values.
-After running, inspect zero-page memory to verify the stack contents match
-your expectation.
+Then write a test thread that operates on those values:
+
+```asm
+test_thread:
+    ; (normally we'd use cfa_lit to push values here, but LIT isn't implemented yet)
+    .word cfa_plus      ; add 3 + 5 -> 8
+    .word cfa_dup       ; dup -> 8 8
+    .word cfa_drop      ; drop -> 8
+    .word cfa_exit
+```
 
 ### Part 6 - Verify in the Debugger
 
