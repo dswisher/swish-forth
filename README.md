@@ -50,7 +50,7 @@ See [docs/setup.md](docs/setup.md) for installation instructions.
 | [01](docs/lab-01.md) | Hello, X16 - toolchain and first assembly program |
 | [02](docs/lab-02.md) | Memory map and threading model |
 | [03](docs/lab-03.md) | The inner interpreter: NEXT and the threading engine |
-| 04 | Colon definitions: DOCOL and EXIT *(coming soon)* |
+| [04](docs/lab-04.md) | Colon definitions: DOCOL and EXIT |
 | 05 | Primitive words: stack ops, arithmetic, memory access *(coming soon)* |
 | 06 | The dictionary and FIND *(coming soon)* |
 | 07 | The outer interpreter: INTERPRET, number parsing, the FORTH prompt *(coming soon)* |
