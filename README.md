@@ -52,7 +52,7 @@ See [docs/setup.md](docs/setup.md) for installation instructions.
 | [03](docs/lab-03.md) | The inner interpreter: NEXT and the threading engine |
 | [04](docs/lab-04.md) | Colon definitions: DOCOL and EXIT |
 | [05](docs/lab-05.md) | Primitive words: stack ops, arithmetic, memory access |
-| 06 | The dictionary and FIND *(coming soon)* |
+| [06](docs/lab-06.md) | LIT, the dictionary, and FIND |
 | 07 | The outer interpreter: INTERPRET, number parsing, the FORTH prompt *(coming soon)* |
 
 ## References
