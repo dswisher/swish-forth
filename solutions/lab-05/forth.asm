@@ -66,7 +66,7 @@ test_thread:
 ; Colon definition: OUTER
 cfa_outer:
     .word DOCOL
-    .word cfa_store
+    .word cfa_over
     .word cfa_exit
 
 
@@ -178,8 +178,8 @@ code_swap:
 cfa_over:
     .word code_over
 code_over:
-    lda PSP+3,x     ; load NOS lo
-    ldy PSP+2,x     ; load NOS hi
+    lda PSP+2,x     ; load NOS lo
+    ldy PSP+3,x     ; load NOS hi
     dex
     dex
     sta PSP+0,x     ; push copy lo
@@ -250,8 +250,8 @@ code_fetch:
     ; put address in WX
     lda PSP+0,x     ; load TOS lo
     sta WX+0        ; store temp lo
-    lda PSP+1,x     ; load TOS lo
-    sta WX+1        ; store temp lo
+    lda PSP+1,x     ; load TOS hi
+    sta WX+1        ; store temp hi
 
     ; fetch the value
     ldy #$00
