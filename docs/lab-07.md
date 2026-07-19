@@ -1,223 +1,125 @@
-# Lab 7: The Outer Interpreter
+# Lab 7: Branching and Comparison
 
 ## Objectives
 
-- Implement `EMIT` and `KEY` - the basic I/O primitives
-- Implement `WORD` - reads one whitespace-delimited token from input
-- Implement `NUMBER` - converts a string to a 16-bit integer
-- Implement the outer interpreter loop `INTERPRET` - the FORTH prompt
-- Boot into an interactive FORTH session
+- Implement `BRANCH` and `0BRANCH` - unconditional and conditional jumps
+  within a thread
+- Implement the comparison primitives: `=`, `<`, `>`, `0=`
+- Understand how branch offsets work in a compiled FORTH thread
+- Write a hand-compiled loop to verify branching works correctly
 
 ## Prerequisites
 
-- Lab 6 complete - `LIT` and `FIND` working, full dictionary in place
-- Familiarity with the X16 KERNAL routines `CHROUT` and `CHRIN` from Lab 1
-- Understanding of ASCII character codes
+- Lab 6 complete - `LIT`, `FIND`, and the full dictionary in place
+- Comfortable with how `IP` drives the inner interpreter
 
 ---
 
 ## Background
 
-### The Outer Interpreter
+### Why Branching is Fundamental
 
-The inner interpreter (`NEXT`, `DOCOL`, `EXIT`) executes compiled FORTH
-threads. The **outer interpreter** is what makes FORTH interactive: it reads
-a line of input, breaks it into words, looks each one up in the dictionary,
-and either executes it or (if it is a number) pushes it onto the stack.
+Every non-trivial program needs conditional execution and loops. In a
+conventional language these are syntax (`if`, `while`). In FORTH they are
+words - specifically, words that manipulate `IP` directly to skip forward or
+jump backward in the current thread.
 
-The classic FORTH outer interpreter loop is:
+Two primitives are sufficient to build all control structures:
+
+- `BRANCH` - unconditional jump: always adjusts `IP` by a given offset
+- `0BRANCH` - conditional jump: pops a flag; if zero, adjusts `IP`; if
+  non-zero, falls through
+
+All of FORTH's control structures (`IF`/`ELSE`/`THEN`, `BEGIN`/`AGAIN`,
+`BEGIN`/`UNTIL`, `DO`/`LOOP`) compile down to these two primitives.
+
+### Branch Offsets
+
+`BRANCH` and `0BRANCH` are followed immediately in the thread by a 16-bit
+**signed offset**. This offset is relative to the address of the cell
+*after* the offset itself - i.e., relative to where `IP` will be pointing
+after `NEXT` has advanced past the offset cell.
+
+For example, an unconditional backward jump to loop back 10 bytes would have
+an offset of `-10` (stored as a 16-bit two's complement value). A forward
+skip of 4 bytes has an offset of `4`.
+
+`BRANCH` pseudocode:
 
 ```
-BEGIN
-    WORD        ( -- addr len )   read next token from input
-    DUP 0= IF DROP ... THEN       handle end of input
-    FIND        ( addr len -- cfa | 0 )   look up in dictionary
-    IF          found: execute it
-        EXECUTE
-    ELSE        not found: try to parse as a number
-        NUMBER
-        IF      valid number: already on the stack
-        ELSE    error: unknown word
-            ERROR
-        THEN
-    END
-AGAIN
+BRANCH:
+    IP = IP + memory[IP]    ; add the offset (signed) to IP
+    NEXT
 ```
 
-In this lab you will implement the pieces that make this loop work, then wire
-them together into a running interpreter.
+`0BRANCH` pseudocode:
 
-### X16 I/O
+```
+0BRANCH:
+    flag = pop()
+    if flag == 0:
+        IP = IP + memory[IP]
+    else:
+        IP = IP + 2         ; skip past the offset cell
+    NEXT
+```
 
-The Commander X16 KERNAL provides two routines you already used in Lab 1:
+### Computing Offsets by Hand
 
-- `CHROUT` (`$FFD2`) - output one character (A register = ASCII code)
-- `CHRIN` (`$FFCF`) - input one character (returns ASCII code in A)
+When hand-compiling a thread, you need to calculate each branch offset
+manually. The process:
 
-`CHRIN` on the X16 returns characters from the current input channel. In the
-default keyboard input mode, it waits for the user to press a key and returns
-the PETSCII code. Note that the X16 uses PETSCII, not ASCII - for printable
-characters in the range `$20`-`$5F` they are identical, but be aware of this
-distinction if you encounter unexpected behavior with lowercase letters.
+1. Lay out the thread on paper, noting the address (or relative position)
+   of each cell
+2. The offset is: `target_address - (offset_cell_address + 2)`
+   - `+2` because IP has already advanced past the offset cell before the
+     branch takes effect
+3. For a backward jump, the result is negative - store it as a 16-bit
+     two's complement value using ca65's `.word` directive, which handles
+     negative values correctly
 
-### EMIT and KEY
-
-`EMIT` ( c -- ) outputs one character. It pops the character code from the
-stack and calls `CHROUT`:
+Example - a simple `BEGIN`/`AGAIN` loop (infinite):
 
 ```asm
-code_emit:
-    lda PSP+0,x     ; character in A (lo byte; hi byte is ignored)
-    inx
-    inx
-    jsr CHROUT
-    jmp NEXT
+pfa_loop:
+    .word cfa_dup               ; position 0
+    .word cfa_branch            ; position 2
+    .word pfa_loop - (* + 2)    ; position 4: offset back to position 0
 ```
 
-`KEY` ( -- c ) waits for a keypress and pushes the character code:
+The expression `pfa_loop - (* + 2)` lets ca65 compute the offset for you:
+`*` is the current address (the offset cell itself), so `* + 2` is where
+IP will be after reading the offset, and `pfa_loop` is the target. The
+result is a negative number assembled as a 16-bit word.
 
-```asm
-code_key:
-    jsr CHRIN
-    dex
-    dex
-    sta PSP+0,x
-    lda #0
-    sta PSP+1,x
-    jmp NEXT
-```
+This is the key insight: you can use ca65 arithmetic expressions to compute
+branch offsets symbolically rather than counting bytes by hand.
 
-### Input Buffering and WORD
+### Comparison Primitives
 
-The X16 KERNAL's `CHRIN` in keyboard mode is **line-buffered**: it does not
-return until the user presses Return, at which point it returns characters one
-at a time on successive calls. This is convenient - it means `WORD` can call
-`CHRIN` repeatedly to read a whole line into a buffer, then parse tokens from
-that buffer.
+The comparison words pop two values (or one, for `0=`), compare them, and
+push a **flag**: `-1` (all bits set, `$FFFF`) for true, `0` for false. FORTH
+uses `-1` rather than `1` for true because it makes bitwise operations on
+flags work correctly (`AND`, `OR`, `NOT`).
 
-`WORD` ( -- addr len ) reads the next whitespace-delimited token from the
-input buffer. Its algorithm:
+| Word | Stack effect    | Description                   |
+|------|-----------------|-------------------------------|
+| `=`  | ( a b -- flag ) | True if a equals b            |
+| `<`  | ( a b -- flag ) | True if a less than b (signed)|
+| `>`  | ( a b -- flag ) | True if a greater than b      |
+| `0=` | ( n -- flag )   | True if n equals zero         |
 
-1. Skip leading spaces (ASCII `$20`)
-2. Collect characters until the next space or end of line (ASCII `$0D` on
-   the X16)
-3. Return the address and length of the collected token
+On the 6502, after `CMP`, the flags tell you the relationship between A and
+the operand. For a 16-bit comparison you compare high bytes first; only if
+they are equal do you need to compare low bytes. Think carefully about the
+signed vs unsigned distinction for `<` and `>` - the 6502's overflow flag (V)
+is involved in signed comparisons.
 
-You will need an input buffer in memory. A reasonable size is 80 bytes. Place
-it in the `BSS` segment (uninitialized data) or reserve space after your code.
-You will also need a pointer into the buffer to track where parsing has
-reached.
-
-A suggested zero-page layout addition:
-
-```asm
-IBUF  = $2B     ; input buffer pointer (2 bytes: $2B-$2C)
-```
-
-And a buffer in memory:
-
-```asm
-.segment "BSS"
-input_buf:  .res 80     ; input line buffer
-ibuf_end:               ; one past the end
-```
-
-`WORD` refills the buffer (calls `CHRIN` in a loop until `$0D`) whenever the
-pointer has reached the end. Between calls, it advances the pointer through
-the buffer, skipping spaces and collecting the next token into a separate
-**word buffer** (another small region of memory), returning a pointer to that.
-
-### NUMBER
-
-`NUMBER` ( addr len -- n flag ) attempts to convert a string to a 16-bit
-unsigned integer in the current base (we will use base 10 for now). It returns
-the number and a flag: non-zero on success, zero on failure.
-
-The algorithm for base-10 conversion:
-
-```
-result = 0
-for each character c in the string:
-    if c < '0' or c > '9': return 0 (failure)
-    result = result * 10 + (c - '0')
-return result, -1 (success)
-```
-
-Multiplying a 16-bit value by 10 on the 6502 requires some work since there
-is no multiply instruction. The standard trick is:
-
-```
-n * 10 = (n * 8) + (n * 2) = (n << 3) + (n << 1)
-```
-
-Shifting left is done with `ASL` (arithmetic shift left), which doubles the
-value. Shifting left 3 times multiplies by 8.
-
-### EXECUTE
-
-`EXECUTE` ( cfa -- ) takes a CFA address from the stack and jumps to the code
-it points to - effectively dispatching a word that was found by `FIND` at run
-time rather than compiled into a thread.
-
-```asm
-code_execute:
-    lda PSP+0,x     ; load CFA lo
-    sta WX
-    lda PSP+1,x     ; load CFA hi
-    sta WX+1
-    inx
-    inx
-    ldy #0
-    lda (WX),y      ; read code address lo
-    sta W
-    iny
-    lda (WX),y      ; read code address hi
-    sta W+1
-    jmp (W)
-```
-
-Notice this is essentially the second half of `NEXT` - it reads through the
-CFA to get the code address and jumps to it. `W` is used here (not `WX`)
-because if the word being executed is a colon definition, `DOCOL` will need
-`WX` intact... actually, think carefully: what does `DOCOL` actually read?
-Make sure you use the right register here.
-
-### INTERPRET - Putting It Together
-
-`INTERPRET` is a colon definition - the outer interpreter loop written in
-FORTH itself (as a thread of CFAs). Because you now have `FIND`, `EXECUTE`,
-`LIT`, and the stack primitives, you can write `INTERPRET` as a colon
-definition in assembly (a hand-compiled FORTH word) rather than in machine
-code.
-
-The loop structure in pseudo-FORTH:
-
-```forth
-: INTERPRET
-    BEGIN
-        WORD
-        DUP 0= IF DROP ... THEN
-        FIND
-        IF
-            EXECUTE
-        ELSE
-            NUMBER
-            IF DROP ELSE ERROR THEN
-        THEN
-    AGAIN ;
-```
-
-Implementing `BEGIN`/`AGAIN` and `IF`/`ELSE`/`THEN` requires branching
-primitives (`BRANCH` and `0BRANCH`) which we have not yet built. For this
-lab, implement `INTERPRET` as a machine-code subroutine rather than a pure
-FORTH colon definition. This is a pragmatic shortcut that gets you to an
-interactive prompt without needing the compiler infrastructure. The plan is:
-
-1. Write `INTERPRET` as a simple assembly loop that calls the FORTH words
-   (`WORD`, `FIND`, `EXECUTE`, `NUMBER`) via `JSR` to their code labels
-   directly, rather than going through the inner interpreter
-2. Once you have branching words in a later lab, you can rewrite `INTERPRET`
-   as a proper colon definition
+> **Simplification**: For this lab, implement `<` and `>` as **unsigned**
+> comparisons. Signed comparison requires the overflow flag and is more
+> complex. Most of the uses of `<` and `>` in the outer interpreter and
+> control structures work correctly with unsigned values for typical FORTH
+> programs. You can revisit this later.
 
 ---
 
@@ -226,111 +128,96 @@ interactive prompt without needing the compiler infrastructure. The plan is:
 Continue working in a new `lab-07/` directory. Copy your `forth.asm`,
 `forth.cfg`, and `Makefile` from `lab-06/`.
 
-### Part 1 - EMIT and KEY
+### Part 1 - BRANCH and 0BRANCH
 
-Add `EMIT` and `KEY` as primitives with dictionary entries. Test them with a
-simple thread that pushes the ASCII code for `!` and calls `EMIT`, then calls
-`KEY` and `EMIT` to echo a keypress back to the screen.
+Implement `BRANCH` and `0BRANCH` as primitives with dictionary entries.
 
-Note that `CHROUT` and `CHRIN` use `JSR`/`RTS`. This is fine inside a
-primitive - `JSR` pushes to the hardware stack, but `RTS` pops it before you
-call `NEXT`, so the stack is balanced.
+For `BRANCH`, the code must:
+1. Read the 16-bit signed offset from `memory[IP]`
+2. Add it to `IP`
+3. Call `NEXT`
 
-### Part 2 - Input Buffer and WORD
+For `0BRANCH`:
+1. Pop the flag from the stack
+2. If zero: read the offset and add it to `IP`
+3. If non-zero: advance `IP` by 2 (skip the offset cell)
+4. Call `NEXT`
 
-Add the input buffer and `IBUF` pointer to the zero-page layout. Implement
-`WORD` as a primitive. Its job:
+Adding a signed 16-bit offset to `IP` is the same 16-bit addition you
+implemented for `+` in Lab 5, applied to `IP` instead of stack values.
 
-1. If `IBUF` pointer is at or past the end of the buffer, refill: call
-   `CHRIN` in a loop until `$0D` (carriage return), storing each character
-   into `input_buf`. Reset the pointer to the start of the buffer. Optionally
-   print a prompt (`OK `) before reading.
-2. Skip characters equal to `$20` (space), advancing the pointer.
-3. Collect characters (not space, not `$0D`) into a separate `word_buf`,
-   advancing both pointers.
-4. Push the address of `word_buf` and the length of the collected token.
+### Part 2 - Comparison Primitives
 
-Test `WORD` by writing a thread that calls `WORD` and then uses `EMIT` in a
-loop to print back what was read. (You will need a simple loop primitive or
-just unroll it for testing.)
+Implement `=`, `<`, `>`, and `0=`. Each should push `$FFFF` for true and
+`$0000` for false.
 
-### Part 3 - NUMBER
+For `=`: subtract the two values (using the same technique as `-`) and check
+if the result is zero.
 
-Implement `NUMBER` as a primitive. For now, only handle unsigned decimal
-integers (digits `0`-`9`). Return a success/failure flag as described in the
-background section.
+For `0=`: OR the lo and hi bytes of TOS and check if the result is zero.
 
-Test with known strings: push the address and length of `"42"` and call
-`NUMBER`; verify the stack contains `42` and a non-zero flag.
+For `<` and `>`: use unsigned comparison via `CMP`. After comparing the high
+bytes, branch on the carry and zero flags to determine the result.
 
-### Part 4 - EXECUTE
+### Part 3 - Test with a Hand-Compiled Loop
 
-Implement `EXECUTE` as a primitive. Review the background section carefully
-regarding which register (`W` vs `WX`) to use, and why.
+Write a hand-compiled colon definition that uses branching to implement a
+simple counted loop. For example, a word that counts down from 3 to 0,
+calling `DUP` on each iteration (so you can see values accumulating on the
+stack):
 
-Test by using `FIND` to look up a known word, then passing the result to
-`EXECUTE`. Verify the word runs correctly.
+```forth
+: COUNT-DOWN
+    BEGIN
+        1-
+        DUP 0= IF EXIT THEN
+    AGAIN ;
+```
 
-### Part 5 - INTERPRET
+Hand-compile this into assembly using `.word` directives and the ca65 offset
+expression technique from the background section. Step through it in the
+debugger to verify the branches land at the correct addresses.
 
-Wire everything together into an `INTERPRET` loop. Implement it as an
-assembly subroutine (not a FORTH colon definition) that:
+### Part 4 - Add to the Dictionary
 
-1. Prints a prompt (`OK `)
-2. Calls `WORD` to read a token
-3. Calls `FIND` to look it up
-4. If found: calls `EXECUTE`
-5. If not found: calls `NUMBER`; if that fails, prints `?` and the unknown
-   word
-6. Loops back to step 1
-
-Change `main` to initialize the stacks and then call `INTERPRET` (via `JSR`
-or by entering the inner interpreter with `INTERPRET` as the first thread
-entry).
-
-At this point you should have a working interactive FORTH prompt. Try typing
-`DUP`, `DROP`, and arithmetic expressions to verify they execute correctly.
+Add dictionary entries for all new words: `BRANCH`, `0BRANCH`, `=`, `<`,
+`>`, `0=`. Update `LATEST` to point to the most recently defined word.
 
 ---
 
 ## Questions to Think About
 
-1. `WORD` skips leading spaces. What happens if the user types only spaces and
-   hits Return? What should `WORD` do - return a zero-length token, or keep
-   waiting for input?
+1. `BRANCH` adds the offset to `IP`. The offset is relative to the cell
+   after the offset itself. Why this convention rather than relative to the
+   `BRANCH` cell itself? What would change in the offset calculations?
 
-2. `NUMBER` currently only handles unsigned decimal. How would you extend it
-   to handle negative numbers (a leading `-`)? How would you handle hex input
-   (a leading `$` or `0x`)?
+2. `0BRANCH` uses `$0000` as false and anything else as true. What happens
+   if a program pushes `1` instead of `$FFFF` as a true flag and uses it
+   with `0BRANCH`? Does it work correctly?
 
-3. `EXECUTE` is similar to the dispatch in `NEXT`. Could you implement
-   `EXECUTE` as a colon definition that uses other primitives, or does it
-   need to be a primitive itself? Why?
+3. The comparison words push `$FFFF` for true. Why is `-1` a better choice
+   than `1`? Think about what happens when you AND two true flags together.
 
-4. The `INTERPRET` loop calls FORTH words from assembly using `JSR`. This
-   means the hardware stack is being used for both FORTH's return stack and
-   for the `JSR` return addresses. Is there a conflict? What is the maximum
-   nesting depth available?
+4. `0=` ( n -- flag ) is sometimes called `NOT` in older FORTH
+   implementations. Why is `0=` a better name? When would `NOT` be
+   misleading?
 
-5. When `INTERPRET` encounters an unknown word, it prints `?`. In a more
-   complete FORTH, what else might you want to do on an error? What state
-   might need to be reset?
+5. Could `>` be implemented in terms of `<` and other stack words, without
+   its own machine code? What would that look like?
 
 ---
 
 ## Stretch Goals
 
-- **Base variable**: Add a `BASE` variable (a 2-byte cell in memory) that
-  `NUMBER` uses instead of hardcoded 10. Implement `DECIMAL` and `HEX` as
-  words that store 10 or 16 into `BASE`. Then extend `NUMBER` to handle hex
-  digits `A`-`F`.
-- **. (dot)**: Implement `.` ( n -- ) which pops a number and prints it in
-  the current base. This requires a division routine (or repeated subtraction)
-  to extract digits. Once you have `.`, you can use FORTH interactively to
-  check arithmetic results without the debugger.
-- **CR and SPACE**: Implement `CR` ( -- ) which emits a carriage return and
-  line feed, and `SPACE` ( -- ) which emits a space. These are trivial with
-  `EMIT` but useful enough to deserve dictionary entries.
-- **ECHO**: After reading a line in `WORD`, echo it back with a newline before
-  processing. This makes the interpreter feel more responsive and is standard
-  behavior on many FORTH systems.
+- **Signed comparison**: Implement signed versions of `<` and `>` using the
+  6502 overflow flag. The condition for signed less-than after `CMP` is:
+  `N XOR V = 1`. How does this translate to branch instructions?
+- **MIN and MAX**: Implement `MIN` ( a b -- min ) and `MAX` ( a b -- max )
+  using `<` and the stack primitives. These can be written as hand-compiled
+  colon definitions.
+- **NEGATE and NOT**: Implement `NEGATE` ( n -- -n ) using two's complement,
+  and `NOT` ( n -- ~n ) using bitwise inversion. These are useful building
+  blocks and simple to implement.
+- **U< and U>**: Add explicitly-named unsigned comparison words. Having both
+  signed and unsigned variants with clear names (`<` for signed, `U<` for
+  unsigned) is the ANS FORTH convention.

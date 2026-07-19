@@ -53,7 +53,11 @@ See [docs/setup.md](docs/setup.md) for installation instructions.
 | [04](docs/lab-04.md) | Colon definitions: DOCOL and EXIT |
 | [05](docs/lab-05.md) | Primitive words: stack ops, arithmetic, memory access |
 | [06](docs/lab-06.md) | LIT, the dictionary, and FIND |
-| [07](docs/lab-07.md) | The outer interpreter: EMIT, KEY, WORD, NUMBER, INTERPRET |
+| [07](docs/lab-07.md) | Branching and comparison: BRANCH, 0BRANCH, =, <, > |
+| [08](docs/lab-08.md) | The outer interpreter: EMIT, KEY, WORD, NUMBER, INTERPRET |
+| 09 | The compiler: `:`, `;`, CREATE, and COMMA *(coming soon)* |
+| 10 | Control structures: IF/ELSE/THEN, BEGIN/AGAIN, DO/LOOP *(coming soon)* |
+| 11 | Variables and constants: VARIABLE, CONSTANT, VALUE *(coming soon)* |
 
 ## References
 
