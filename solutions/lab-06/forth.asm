@@ -341,6 +341,7 @@ code_lit:
     sta PSP+1,x     ; store hi
 
     ; IP = IP + 2
+    clc
     lda IP
     adc #2
     sta IP
