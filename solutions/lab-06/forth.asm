@@ -108,6 +108,9 @@ DOCOL:
 ; ----------------------------------------
 
 ; EXIT - exits the current word
+dict_exit:
+    .word $0000
+    .byte 4, "EXIT"
 cfa_exit:
     .word code_exit
 code_exit:
@@ -120,6 +123,9 @@ code_exit:
 
 
 ; DUP ( n -- n n ) duplicates the top of stack.
+dict_dup:
+    .word dict_exit
+    .byte 3, "DUP"
 cfa_dup:
     .word code_dup
 code_dup:
@@ -134,6 +140,9 @@ code_dup:
 
 
 ; DROP ( n -- ) discards the top of stack.
+dict_drop:
+    .word dict_dup
+    .byte 4, "DROP"
 cfa_drop:
     .word code_drop
 code_drop:
@@ -143,6 +152,9 @@ code_drop:
 
 
 ; SWAP ( a b -- b a ) exchanges the top two items.
+dict_swap:
+    .word dict_drop
+    .byte 4, "SWAP"
 cfa_swap:
     .word code_swap
 code_swap:
@@ -162,6 +174,9 @@ code_swap:
 
 
 ; OVER ( a b -- a b a ) copies second item to the top
+dict_over:
+    .word dict_swap
+    .byte 4, "OVER"
 cfa_over:
     .word code_over
 code_over:
@@ -176,6 +191,9 @@ code_over:
 
 
 ; + ( a b -- a+b ) 16-bit addition
+dict_plus:
+    .word dict_over
+    .byte 1, "+"
 cfa_plus:
     .word code_plus
 code_plus:
@@ -192,6 +210,9 @@ code_plus:
 
 
 ; - ( a b -- a-b ) 16-bit subtraction
+dict_minus:
+    .word dict_plus
+    .byte 1, "-"
 cfa_minus:
     .word code_minus
 code_minus:
@@ -208,6 +229,9 @@ code_minus:
 
 
 ; 1+ ( n -- n+1 ) increment by 1
+dict_one_plus:
+    .word dict_minus
+    .byte 2, "1+"
 cfa_one_plus:
     .word code_one_plus
 code_one_plus:
@@ -218,6 +242,9 @@ code_one_plus:
 
 
 ; 1- ( n -- n-1 ) decrement by 1
+dict_one_minus:
+    .word dict_one_plus
+    .byte 2, "1-"
 cfa_one_minus:
     .word code_one_minus
 code_one_minus:
@@ -232,6 +259,9 @@ code_one_minus:
 
 
 ; @ ( addr -- n ) fetch 16-bit value from address
+dict_fetch:
+    .word dict_one_minus
+    .byte 1, "@"
 cfa_fetch:
     .word code_fetch
 code_fetch:
@@ -252,6 +282,9 @@ code_fetch:
 
 
 ; ! ( n addr -- ) store 16-bit value to address
+dict_store:
+    .word dict_fetch
+    .byte 1, "!"
 cfa_store:
     .word code_store
 code_store:
@@ -279,7 +312,7 @@ code_store:
 
 ; BYE ( -- ) break execution - seems to drop to MON on the X16
 dict_bye:
-    .word $0000     ; for the moment, end the dictionary list here
+    .word dict_store
     .byte 3, "BYE"
 cfa_bye:
     .word code_bye
