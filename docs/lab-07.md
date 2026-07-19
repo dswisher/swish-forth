@@ -84,7 +84,7 @@ Example - a simple `BEGIN`/`AGAIN` loop (infinite):
 pfa_loop:
     .word cfa_dup               ; position 0
     .word cfa_branch            ; position 2
-    .word pfa_loop - (* + 2)    ; position 4: offset back to position 0
+    .word (pfa_loop - (* + 2)) & $FFFF    ; position 4: offset back to position 0
 ```
 
 The expression `pfa_loop - (* + 2)` lets ca65 compute the offset for you:
