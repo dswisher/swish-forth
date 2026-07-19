@@ -50,9 +50,14 @@ From Lab 2, our plan is:
 ```
 $0022-$0023   W   (working register, 2 bytes, lo/hi)
 $0024-$0025   IP  (instruction pointer, 2 bytes, lo/hi)
+$0026-$0027   WX  (scratch register for NEXT, 2 bytes, lo/hi)
 X register    PSP (parameter stack pointer)
 S register    RSP (return stack pointer, hardware stack)
 ```
+
+`WX` is needed by `NEXT` to perform the second level of indirection (see
+below). `W` must remain intact after `NEXT` because the code being dispatched
+to may need it - this becomes important in Lab 4 with `DOCOL`.
 
 We will define these as zero-page labels at the top of `forth.asm`.
 
@@ -80,18 +85,32 @@ clc
 lda IP
 adc #2
 sta IP
-bcc :+
+bcc @no_carry
 inc IP+1
-:
+@no_carry:
 
-; Jump through W (the CFA) to the machine code
-; memory[W] is itself an address - we need to jump to it
-jmp (W)         ; jump to the address stored at W
+; W holds the CFA address. Read through it to get the code address into WX.
+; We cannot overwrite W because DOCOL (Lab 4) needs it intact.
+ldy #0
+lda (W),y
+sta WX
+iny
+lda (W),y
+sta WX+1
+
+; Jump to the machine code
+jmp (WX)
 ```
 
-That last `jmp (W)` is the 6502's indirect jump instruction. It reads a 16-bit
-address from the memory location `W` points to and jumps there. This is the
-second level of indirection.
+`NEXT` performs two levels of indirection:
+1. Fetch the CFA address from the thread into `W` (thread cell → `W`)
+2. Read through `W` to get the code address into `WX` (`W` → `WX`)
+3. Jump to the code via `jmp (WX)`
+
+This is why it is called *indirect*-threaded code.
+
+Note that anonymous labels (`:+`) do not work correctly inside ca65 macros.
+Use `@`-prefixed local labels instead - ca65 makes them unique per expansion.
 
 `NEXT` will be used at the end of *every* primitive, so we define it as a
 ca65 macro to avoid repeating this code everywhere:
@@ -108,10 +127,16 @@ ca65 macro to avoid repeating this code everywhere:
     lda IP
     adc #2
     sta IP
-    bcc :+
+    bcc @no_carry
     inc IP+1
-:
-    jmp (W)
+@no_carry:
+    ldy #0
+    lda (W),y
+    sta WX
+    iny
+    lda (W),y
+    sta WX+1
+    jmp (WX)
 .endmacro
 ```
 
@@ -142,6 +167,7 @@ zero-page labels:
 ; Zero page layout
 W   = $22       ; working register (2 bytes: $22-$23)
 IP  = $24       ; instruction pointer (2 bytes: $24-$25)
+WX  = $26       ; NEXT scratch register (2 bytes: $26-$27)
 ```
 
 These are equates (not storage allocations) - they just give names to
@@ -190,8 +216,9 @@ code_bar:
 ```
 
 Notice the structure: `cfa_foo` is a 2-byte cell containing the address
-`code_foo`. When `NEXT` does `jmp (W)` with `W` pointing at `cfa_foo`, it
-reads `code_foo` from that cell and jumps there. That is the indirection.
+`code_foo`. `NEXT` loads `W` with the address of `cfa_foo`, then reads
+through `W` to load `WX` with `code_foo`, then `jmp (WX)` jumps to the
+machine code. That is the two levels of indirection.
 
 > **Question to think about**: Why does `cfa_foo` contain the address
 > `code_foo` rather than just being the same address as `code_foo`? What
@@ -207,15 +234,17 @@ Using `D` to disassemble and `M` to dump memory, verify:
 
 1. `IP` at `$24`-`$25` contains the address of `test_thread`
 2. The first word of `test_thread` contains the address of `cfa_foo`
-3. After stepping through `NEXT`, `W` at `$22`-`$23` contains the address of
+3. After the fetch phase of `NEXT`, `W` at `$22`-`$23` contains the address of
    `cfa_foo` and `IP` has advanced by 2
-4. The `jmp (W)` lands at `code_foo`
+4. After the second dereference, `WX` at `$26`-`$27` contains the address of
+   `code_foo`
+5. The `jmp (WX)` lands at `code_foo`
 
 ---
 
 ## Questions to Think About
 
-1. The `NEXT` macro ends with `jmp (W)`. This is the 6502's indirect jump -
+1. The `NEXT` macro ends with `jmp (WX)`. This is the 6502's indirect jump -
    it reads a 16-bit address from memory and jumps there. There is a famous
    6502 bug with `jmp (addr)` when `addr` ends in `$FF` (e.g. `jmp ($12FF)`).
    Look it up. Does it affect us? Why or why not?
