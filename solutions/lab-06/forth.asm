@@ -51,7 +51,7 @@ test_thread:
 ; Colon definition: OUTER
 cfa_outer:
     .word DOCOL
-    .word cfa_lit, FIND_GOAL+1
+    .word cfa_lit, FIND_GOAL
     .word cfa_lit, FIND_LEN
     .word cfa_find
     .word cfa_exit
@@ -284,7 +284,10 @@ dict_bye:
 cfa_bye:
     .word code_bye
 code_bye:
+    nop
     brk
+    nop
+    nop
 
 
 ; LIT ( -- n ) pushes a literal on the stack
@@ -321,73 +324,94 @@ dict_find:
 cfa_find:
     .word code_find
 code_find:
-    ; pull the parameters off the stack, leaving room for the one we'll add
-    ; TODO - subtract 2 from the address before storing it
-    lda PSP+2,x     ; load TOS lo
-    ldy PSP+3,x     ; load TOS hi
-    sta ADDR+0      ; save lo
-    sty ADDR+1      ; save hi
+    ; pop parameters off the stack
+    ; pre-adjust ADDR by -2 so Y can index both strings simultaneously
+    sec
+    lda PSP+2,x     ; addr lo
+    sbc #3
+    sta ADDR
+    lda PSP+3,x     ; addr hi
+    sbc #0
+    sta ADDR+1
 
-    lda PSP+0,x     ; load NOS lo
-    sta LEN         ; save len
+    lda PSP+0,x     ; len
+    sta LEN
 
     inx
     inx
 
-    ; entry (wx) = memory[LATEST]      ; start at the most recent entry
-    lda LATEST      ; load address (TOS) lo
-    sta WX+0        ; store temp lo
-    lda LATEST+1    ; load address (TOS) lo
-    sta WX+1        ; store temp lo
+    ; load LATEST into WX to start walking the dictionary
+    lda LATEST
+    sta WX
+    lda LATEST+1
+    sta WX+1
 
 find_loop:
-    ; if entry is zero, we're done
+    ; if entry == 0, not found
     lda WX
     ora WX+1
     beq find_no_match
 
-    ; check if the length (WX),2 is a match
-    ldy #$02
-    lda (WX),y      ; get lo value from address
+    ; check length byte (at offset 2 from entry)
+    ldy #2
+    lda (WX),y
     cmp LEN
-    bne find_loop
+    bne find_next       ; length mismatch, try next entry
 
-    ; check to see if the string matches
-    ; TODO - save X on the stack, then use it as a loop counter to check the string
-
-    nop             ; pattern so I can see this spot in the debugger
-    nop
-    nop
-
-find_next:
-    ; This one isn't a match, go look for the next one
-    ;     entry = memory[entry]               ; follow the link
-    ldy #$00
-    lda (WX),y      ; get lo value from address
+    ; string compare - save X, use it as down-counter
+    txa
     pha
+    ldx LEN
+    ldy #3              ; Y=3: first char of dict name; (ADDR),3 = first char of search string
+
+find_cmp_loop:
+    lda (WX),y
+    cmp (ADDR),y
+    bne find_cmp_fail
     iny
-    lda (WX),y      ; get hi value from address
-    sta WX+1        ; store hi
+    dex
+    bne find_cmp_loop
+
+    ; full match - restore X, return CFA address (WX + 3 + LEN)
     pla
-    sta WX+0        ; store lo
-
-    jmp find_loop
-
-find_no_match:
-    lda #$00
+    tax
+    clc
+    lda WX
+    adc #3
+    sta WX
+    bcc :+
+    inc WX+1
+:   clc
+    lda WX
+    adc LEN
     sta PSP+0,x
+    lda WX+1
+    adc #0
     sta PSP+1,x
     jmp NEXT
 
+find_cmp_fail:
+    pla
+    tax
+    ; fall through to find_next
 
-; entry = memory[LATEST]      ; start at the most recent entry
-; while entry != 0:
-;     name_len = memory[entry + 2]        ; length byte of this entry
-;     if name_len == len:
-;         if memory[entry + 3 .. entry + 3 + len] == string:
-;             return entry + 3 + len      ; CFA is right after the name
-;     entry = memory[entry]               ; follow the link
-; return 0
+find_next:
+    ; follow the link field (at offset 0)
+    ldy #0
+    lda (WX),y
+    pha
+    iny
+    lda (WX),y
+    sta WX+1
+    pla
+    sta WX
+    jmp find_loop
+
+find_no_match:
+    lda #0
+    sta PSP+0,x
+    sta PSP+1,x
+    jmp NEXT
 
 
 ; Pointer to the first dictionary entry
@@ -395,7 +419,7 @@ LATEST:
     .word dict_find
 
 ; Testing
-FIND_LEN = 4
+FIND_LEN = 3
 FIND_GOAL:
-    .byte "FIND"
+    .byte "LIT"
 
