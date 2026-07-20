@@ -51,16 +51,10 @@ test_thread:
 ; Colon definition: OUTER
 cfa_outer:
     .word DOCOL
-    .word cfa_lit, 0001         ; position 0
-pfa_loop:
-    .word cfa_one_minus         ; position 4
-    .word cfa_dup
-    .word cfa_0branch           ; position 8
-    .word (pfa_loop - (* + 2)) & $FFFF  ; offset back to position 4, with a "cast" to avoid overflow
-    .word cfa_lit, 0088         ; position 0
-    .word cfa_dup
-    .word cfa_dup
-    .word cfa_bye               ; not reached
+    .word cfa_lit, $2445    ; a
+    .word cfa_lit, $2345    ; b
+    .word cfa_greater_than  ; a > b
+    .word cfa_exit
 
 
 
@@ -324,6 +318,7 @@ cfa_bye:
     .word code_bye
 code_bye:
     nop
+    nop
     brk
     nop
     nop
@@ -532,8 +527,105 @@ code_0branch:
 :   jmp NEXT
 
 
+; = ( a b -- flag ) check if two values are equal
+dict_equal:
+    .word dict_0branch
+    .byte 1, "="
+cfa_equal:
+    .word code_equal
+code_equal:
+    ; subtract the two values, using WX as a scratch area
+    sec
+    lda PSP+2,x     ; load NOS lo
+    sbc PSP+0,x     ; subtract TOS lo
+    sta WX          ; save lo result
+    lda PSP+3,x     ; load NOS hi
+    sbc PSP+1,x     ; subtract TOS hi
+    sta WX+1        ; save hi result
+    inx
+    inx
+
+    ; check for zero
+    lda WX
+    ora WX+1
+    beq return_true
+    jmp return_false
+
+
+; Helper routine to put false on top of the stack and go next
+return_false_with_pop:
+    inx
+    inx
+return_false:
+    lda #$00
+    sta PSP+0,x
+    sta PSP+1,x
+    jmp NEXT
+
+; Helper routine to put true on top of the stack and go next
+return_true_with_pop:
+    inx
+    inx
+return_true:
+    lda #$FF
+    sta PSP+0,x
+    sta PSP+1,x
+    jmp NEXT
+
+
+; 0= ( a -- flag ) check if value is zero
+dict_0equal:
+    .word dict_equal
+    .byte 2, "0="
+cfa_0equal:
+    .word code_0equal
+code_0equal:
+    ; OR the two bytes and check for zero
+    lda PSP+0,x
+    ora PSP+1,x
+    beq return_true
+    jmp return_false
+
+
+; < ( a b -- flag ) check if a < b
+dict_less_than:
+    .word dict_0equal
+    .byte 1, "<"
+cfa_less_than:
+    .word code_less_than
+code_less_than:
+    ; compare hi bytes first
+    lda PSP+3,x     ; 'a' hi
+    cmp PSP+1,x     ; 'b' hi
+    beq :+
+
+    ; hi bytes not equal, is it <?
+    bcc return_true_with_pop    ; carry clear if a<b
+    jmp return_false_with_pop
+
+:   ; hi bytes equal, need to compare the lo bytes
+    lda PSP+2,x     ; 'a' lo
+    cmp PSP+0,x     ; 'b' lo
+    beq return_false_with_pop
+
+    ; lo bytes NOT equal, is it <?
+    bcc return_true_with_pop    ; carry clear if a<b
+    jmp return_false_with_pop
+
+
+; > ( a b -- flag ) check if a > b
+dict_greater_than:
+    .word dict_less_than
+    .byte 1, ">"
+cfa_greater_than:
+    .word DOCOL
+    .word cfa_swap
+    .word cfa_less_than
+    .word cfa_exit
+
+
 ; Pointer to the first dictionary entry
 LATEST:
-    .word dict_0branch
+    .word dict_greater_than
 
 
