@@ -1,4 +1,4 @@
-; forth.asm - lab 6: LIT, the Dictionary, and FIND
+; forth.asm - lab 7: Branching and Comparison
 
 ; --- PRG stub ---
 .segment "HEADER"
