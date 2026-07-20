@@ -68,6 +68,12 @@ cfa_outer:
     .word cfa_lit, $1234
     .word cfa_word
     .word cfa_type
+    .word cfa_lit, $0D
+    .word cfa_emit
+    .word cfa_word
+    .word cfa_type
+    .word cfa_lit, $0D
+    .word cfa_emit
     .word cfa_key
     .word cfa_exit
 
@@ -684,70 +690,74 @@ code_word:
     bne word_no_fill
 
     ; fill the buffer by calling KEY until we get a 0D
-    ; TODO
-    ; HACK - fill with canned text
     ldy #0
-    lda #$44     ; D
+word_one_more:
+    jsr CHRIN
     sta input_buf,y
-    lda #$55     ; U
+    cmp #$0D
+    beq word_reset
     iny
-    sta input_buf,y
-    lda #$50     ; P
-    iny
-    sta input_buf,y
-    lda #$20     ; space
-    iny
-    sta input_buf,y
-    lda #$44     ; D
-    iny
-    sta input_buf,y
-    lda #$52     ; R
-    iny
-    sta input_buf,y
-    lda #$4F     ; O
-    iny
-    sta input_buf,y
-    lda #$50     ; P
-    iny
-    sta input_buf,y
-    lda #$0D     ; CR
-    iny
-    sta input_buf,y
+    jmp word_one_more
 
     ; reset the buffer pointer after fill
+word_reset:
     lda #<input_buf
     sta IBUF
     lda #>input_buf
     sta IBUF+1
 
 word_no_fill:
-    ; we have a buffer full of input to process, skip any leading whitespace
+    ; Skip leading spaces
+word_skip_spaces:
     ldy #0
     lda (IBUF),y
-
     cmp #$20
-    bne word_start_word
+    bne word_collect
+    ; advance IBUF past the space
+    inc IBUF
+    bne word_skip_spaces
+    inc IBUF+1
+    jmp word_skip_spaces
 
-word_start_word:
-    ; we're at the start of a word, start consuming it
+word_collect:
+    lda #<word_buf
+    sta ADDR
+    lda #>word_buf
+    sta ADDR+1
+    ldy #0
+word_collect_loop:
+    lda (IBUF),y        ; y=0 throughout, read at IBUF
+    cmp #$20
+    beq word_done
+    cmp #$0D
+    beq word_done
+    sta (ADDR),y        ; y=0, write to ADDR
+    inc IBUF
+    bne :+
+    inc IBUF+1
+:   inc ADDR
+    bne word_collect_loop
+    inc ADDR+1
+    jmp word_collect_loop
 
-    ; save any change we made to the input position
-
-    ; HACK - just return the start of the buffer
+word_done:
+    ; length = ADDR - word_buf
+    sec
+    lda ADDR
+    sbc #<word_buf
+    sta WX              ; save length
     dex
     dex
     dex
     dex
-    lda IBUF        ; addr lo
+    lda #<word_buf
     sta PSP+2,x
-    lda IBUF+1      ; addr hi
+    lda #>word_buf
     sta PSP+3,x
-    lda #9          ; len lo
+    lda WX
     sta PSP+0,x
-    lda #0          ; len hi
+    lda #0
     sta PSP+1,x
-
-    ; TODO - implement WORD
     jmp NEXT
 
 
@@ -789,6 +799,7 @@ type_done:
 LATEST:
     .word dict_type
 
+
 ; The input buffer area
 input_buf:
     .byte $0D           ; initialize with 0D to trigger a refresh on first call
@@ -796,3 +807,6 @@ input_buf:
 
 ibuf_end:               ; one past the end
 
+; The buffer used by WORD to hold the word
+word_buf:
+    .res 32
