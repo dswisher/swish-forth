@@ -234,10 +234,10 @@ call `NEXT`, so the stack is balanced.
 Add the input buffer and `IBUF` pointer to the zero-page layout. Implement
 `WORD` as a primitive. Its job:
 
-1. If `IBUF` pointer is at or past the end of the buffer, refill: call
-   `CHRIN` in a loop until `$0D` (carriage return), storing each character
-   into `input_buf`. Reset the pointer to the start of the buffer. Optionally
-   print a prompt (`OK `) before reading.
+1. If the current character (`memory[IBUF]`) is `$0D` (carriage return),
+   refill: call `CHRIN` in a loop until `$0D`, storing each character into
+   `input_buf` (including the `$0D` as the terminator). Reset `IBUF` to the
+   start of the buffer. Optionally print a prompt (`OK `) before reading.
 2. Skip characters equal to `$20` (space), advancing the pointer.
 3. Collect characters (not space, not `$0D`) into a separate `word_buf`,
    advancing both pointers.
