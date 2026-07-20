@@ -59,7 +59,8 @@ main:
 
 ; The test thread: a list of CFAs
 test_thread:
-    .word cfa_outer
+    ; .word cfa_outer
+    .word cfa_interpret
     .word cfa_bye
 
 ; Colon definition: OUTER
@@ -706,6 +707,10 @@ word_reset:
     lda #>input_buf
     sta IBUF+1
 
+    ; we refilled, which means the user hit return, so echo that
+    lda #$0D
+    jsr CHROUT
+
 word_no_fill:
     ; Skip leading spaces
 word_skip_spaces:
@@ -795,9 +800,94 @@ type_done:
     jmp NEXT
 
 
+; INTERPRET ( -- ) the outer interpreter
+dict_interpret:
+    .word dict_type
+    .byte 9, "INTERPRET"
+cfa_interpret:
+    .word DOCOL
+interpret_outer_loop:       ; BEGIN
+    .word cfa_word          ;    WORD
+    .word cfa_dup           ;    DUP
+    .word cfa_0equal        ;    0=
+    .word cfa_0branch       ;    IF
+    .word (interpret_then1 - (* + 2)) & $FFFF
+    .word cfa_drop          ;       DROP
+    .word cfa_drop          ;       DROP
+    .word cfa_branch        ;       AGAIN
+    .word (interpret_outer_loop - (* + 2)) & $FFFF
+interpret_then1:
+
+    .word cfa_find
+    .word cfa_dup
+    .word cfa_0branch
+    .word (interpret_else2 - (* + 2)) & $FFFF
+
+    .word cfa_execute
+
+    .word cfa_branch
+    .word (interpret_then2 - (* + 2)) & $FFFF
+
+interpret_else2:
+    ; TODO - NUMBER and ERROR (if not number)
+    .word cfa_error
+
+interpret_then2:
+    .word cfa_branch        ; AGAIN
+    .word (interpret_outer_loop - (* + 2)) & $FFFF
+
+
+; ERROR ( -- ) do the needful for an error in the outer interpreter
+dict_error:
+    .word dict_interpret
+    .byte 5, "ERROR"
+cfa_error:
+    .word DOCOL
+    .word cfa_lit, $3F
+    .word cfa_emit
+    .word cfa_lit, $0D
+    .word cfa_emit
+    ; TODO - clearing the stack, resetting state, printing a message, etc
+    .word cfa_debug
+    .word cfa_exit
+
+
+; DEBUG ( -- ) stop and enter the emulator debugger
+dict_debug:
+    .word dict_error
+    .byte 5, "DEBUG"
+cfa_debug:
+    .word code_debug
+code_debug:
+    .byte $DB   ; STP - 65C02-specific instruction
+    jmp NEXT
+
+
+; EXECUTE ( cfa -- ) takes a CFA address from the stack and jumps to the code it points to
+dict_execute:
+    .word dict_debug
+    .byte 7, "EXECUTE"
+cfa_execute:
+    .word code_execute
+code_execute:
+    lda PSP+0,x     ; load CFA lo
+    sta WX
+    lda PSP+1,x     ; load CFA hi
+    sta WX+1
+    inx
+    inx
+    ldy #0
+    lda (WX),y      ; read code address lo
+    sta W
+    iny
+    lda (WX),y      ; read code address hi
+    sta W+1
+    jmp (W)
+
+
 ; Pointer to the first dictionary entry
 LATEST:
-    .word dict_type
+    .word dict_execute
 
 
 ; The input buffer area

@@ -195,8 +195,8 @@ as a thread of CFAs:
 : INTERPRET
     BEGIN
         WORD
-        DUP 0= IF DROP AGAIN THEN
-        FIND
+        DUP 0= IF DROP DROP AGAIN THEN
+        FIND DUP
         IF
             EXECUTE
         ELSE
