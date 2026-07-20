@@ -48,7 +48,7 @@ skip of 4 bytes has an offset of `4`.
 
 ```
 BRANCH:
-    IP = IP + memory[IP]    ; add the offset (signed) to IP
+    IP = IP + 2 + memory[IP]    ; skip past offset cell, then apply offset
     NEXT
 ```
 
@@ -58,9 +58,9 @@ BRANCH:
 0BRANCH:
     flag = pop()
     if flag == 0:
-        IP = IP + memory[IP]
+        IP = IP + 2 + memory[IP]
     else:
-        IP = IP + 2         ; skip past the offset cell
+        IP = IP + 2             ; skip past the offset cell
     NEXT
 ```
 
@@ -72,8 +72,7 @@ manually. The process:
 1. Lay out the thread on paper, noting the address (or relative position)
    of each cell
 2. The offset is: `target_address - (offset_cell_address + 2)`
-   - `+2` because IP has already advanced past the offset cell before the
-     branch takes effect
+   - `+2` because IP advances past the offset cell before the offset is added
 3. For a backward jump, the result is negative - store it as a 16-bit
      two's complement value using ca65's `.word` directive, which handles
      negative values correctly

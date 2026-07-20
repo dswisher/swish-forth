@@ -51,11 +51,15 @@ test_thread:
 ; Colon definition: OUTER
 cfa_outer:
     .word DOCOL
-    .word cfa_lit, 0003         ; position 0
+    .word cfa_lit, 0001         ; position 0
 pfa_loop:
-    .word cfa_dup               ; position 4
-    .word cfa_branch            ; position 8
+    .word cfa_one_minus         ; position 4
+    .word cfa_dup
+    .word cfa_0branch           ; position 8
     .word (pfa_loop - (* + 2)) & $FFFF  ; offset back to position 4, with a "cast" to avoid overflow
+    .word cfa_lit, 0088         ; position 0
+    .word cfa_dup
+    .word cfa_dup
     .word cfa_bye               ; not reached
 
 
@@ -485,8 +489,51 @@ code_branch:
     jmp NEXT
 
 
+; 0BRANCH ( flag -- ) branch if flag is zero
+dict_0branch:
+    .word dict_branch
+    .byte 7, "0BRANCH"
+cfa_0branch:
+    .word code_0branch
+code_0branch:
+    ; Pop the flag, and check if zero
+    lda #$00
+    ora PSP+0,x     ; apply TOS lo
+    ora PSP+1,x     ; apply TOS hi
+    inx
+    inx
+    cmp #$00        ; inx klobbered the Z flag, maybe
+
+    bne :+
+    ; Do the branch: WX = memory[IP], IP = IP + WX
+    ldy #$00
+    lda (IP),y      ; load offset lo
+    sta WX
+    iny
+    lda (IP),y      ; load offset hi
+    sta WX+1
+
+    clc
+    lda IP
+    adc WX
+    sta IP
+    lda IP+1
+    adc WX+1
+    sta IP+1
+
+    ; IP = IP + 2, regardless of whether we branched or not we gotta skip the offset
+:   clc
+    lda IP
+    adc #2
+    sta IP
+    bcc :+
+    inc IP+1
+
+:   jmp NEXT
+
+
 ; Pointer to the first dictionary entry
 LATEST:
-    .word dict_branch
+    .word dict_0branch
 
 

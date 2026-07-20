@@ -1,6 +1,6 @@
 RUN = x16emu -rom ~/.local/share/x16/rom.bin -prg forth.prg -scale 2 -run
 
-BREAK_SYM = code_branch
+BREAK_SYM = code_0branch
 BREAK_ADDR = $(shell grep 'name="$(BREAK_SYM)"' forth.dbg | sed 's/.*val=\([^,]*\).*/\1/')
 
 .PHONY: all run clean
