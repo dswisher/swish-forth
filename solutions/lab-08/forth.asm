@@ -672,9 +672,15 @@ dict_key:
 cfa_key:
     .word code_key
 code_key:
-    jsr CHRIN
+    txa             ; save stack pointer
+    pha
+    jsr CHRIN       ; character returned in A
+    sta TMP         ; save character before pla clobbers A
+    pla             ; restore stack pointer
+    tax
     dex
     dex
+    lda TMP         ; restore character
     sta PSP+0,x
     lda #0
     sta PSP+1,x
@@ -705,7 +711,13 @@ code_word:
     ; fill the buffer by calling KEY until we get a 0D
     ldy #0
 word_one_more:
-    jsr CHRIN
+    txa             ; save stack pointer
+    pha
+    jsr CHRIN       ; character returned in A
+    sta TMP         ; save character before pla clobbers A
+    pla             ; restore stack pointer
+    tax
+    lda TMP         ; restore character
     sta input_buf,y
     cmp #$0D
     beq word_reset

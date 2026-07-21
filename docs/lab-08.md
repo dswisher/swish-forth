@@ -309,6 +309,13 @@ At this point you should have a working interactive FORTH prompt. Try typing
    complete FORTH, what else might you want to do on an error? What state
    might need to be reset?
 
+6. Right now there is no stack underflow protection. If you type `DROP`
+   repeatedly, the parameter stack pointer will walk past its initial position
+   and start reading garbage. What would it take to detect this? Consider:
+   where would you store the "empty stack" sentinel, which primitives would
+   need to check it, and what should happen when underflow is detected? Is
+   there a way to provide *some* protection without modifying every primitive?
+
 ---
 
 ## Stretch Goals

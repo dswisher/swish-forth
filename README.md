@@ -55,9 +55,10 @@ See [docs/setup.md](docs/setup.md) for installation instructions.
 | [06](docs/lab-06.md) | LIT, the dictionary, and FIND |
 | [07](docs/lab-07.md) | Branching and comparison: BRANCH, 0BRANCH, =, <, > |
 | [08](docs/lab-08.md) | The outer interpreter: EMIT, KEY, WORD, NUMBER, INTERPRET |
-| 09 | The compiler: `:`, `;`, CREATE, and COMMA *(coming soon)* |
+| [09](docs/lab-09.md) | The compiler: `:`, `;`, and COMMA |
 | 10 | Control structures: IF/ELSE/THEN, BEGIN/AGAIN, DO/LOOP *(coming soon)* |
 | 11 | Variables and constants: VARIABLE, CONSTANT, VALUE *(coming soon)* |
+| 12 | Stack safety: underflow detection, DEPTH, and error recovery *(coming soon)* |
 
 ## References
 
