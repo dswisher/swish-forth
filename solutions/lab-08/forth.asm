@@ -694,6 +694,14 @@ code_word:
     cmp #$0D
     bne word_no_fill
 
+    ; all input processed, print "ok<CR>"
+    lda #$4F        ; O
+    jsr CHROUT
+    lda #$4B        ; K
+    jsr CHROUT
+    lda #$0D        ; CR
+    jsr CHROUT
+
     ; fill the buffer by calling KEY until we get a 0D
     ldy #0
 word_one_more:
