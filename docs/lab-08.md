@@ -30,14 +30,18 @@ The classic FORTH outer interpreter loop is:
 ```
 BEGIN
     WORD        ( -- addr len )   read next token from input
-    DUP 0= IF DROP ... THEN       handle end of input
-    FIND        ( addr len -- cfa | 0 )   look up in dictionary
+    DUP 0= IF DROP DROP AGAIN THEN
+    OVER OVER   ( addr len addr len )   save a copy for NUMBER
+    FIND DUP    ( addr len cfa cfa ) or ( addr len 0 0 )
     IF          found: execute it
+        NIP NIP     ( cfa )   drop the saved addr len
         EXECUTE
     ELSE        not found: try to parse as a number
+        DROP        ( addr len )   drop the zero from FIND
         NUMBER
-        IF      valid number: already on the stack
-        ELSE    error: unknown word
+        IF      valid number: n is already on the stack
+        ELSE    error: unknown word - drop the zero, report error
+            DROP
             ERROR
         THEN
     END
@@ -196,12 +200,14 @@ as a thread of CFAs:
     BEGIN
         WORD
         DUP 0= IF DROP DROP AGAIN THEN
-        FIND DUP
+        OVER OVER FIND DUP
         IF
+            NIP NIP
             EXECUTE
         ELSE
+            DROP
             NUMBER
-            IF DROP ELSE ERROR THEN
+            IF ELSE DROP ERROR THEN
         THEN
     AGAIN ;
 ```

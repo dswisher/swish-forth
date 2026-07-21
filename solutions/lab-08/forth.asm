@@ -29,6 +29,7 @@ WX   = $26       ; scratch register for NEXT (2 bytes: $26-$27) and primitive wo
 LEN  = $28       ; length used during string compare (1 byte: $28)
 ADDR = $29       ; base address, used during string compare (2 bytes: $29-$2A)
 IBUF = $2B       ; input buffer pointer (2 bytes: $2B-$2C)
+TMP  = $2D       ; another scratch area (2 bytes: $2D-$2E)
 
 PSP  = $00       ; parameter stack base (X register is the offset, starts at FF and works down)
 
@@ -810,28 +811,39 @@ dict_interpret:
 cfa_interpret:
     .word DOCOL
 interpret_outer_loop:       ; BEGIN
-    .word cfa_word          ;    WORD
-    .word cfa_dup           ;    DUP
-    .word cfa_0equal        ;    0=
-    .word cfa_0branch       ;    IF
+    .word cfa_word          ;    WORD           ( addr len )
+    .word cfa_dup           ;    DUP            ( addr len len )
+    .word cfa_0equal        ;    0=             ( addr len flag )
+    .word cfa_0branch       ;    IF             ( addr len )
     .word (interpret_then1 - (* + 2)) & $FFFF
-    .word cfa_drop          ;       DROP
-    .word cfa_drop          ;       DROP
+    .word cfa_drop          ;       DROP        ( addr )
+    .word cfa_drop          ;       DROP        ( )
     .word cfa_branch        ;       AGAIN
     .word (interpret_outer_loop - (* + 2)) & $FFFF
 interpret_then1:
 
-    .word cfa_find          ;    FIND
-    .word cfa_dup           ;    DUP
-    .word cfa_0branch       ;    IF
+    .word cfa_over          ;    OVER           ( addr len addr )
+    .word cfa_over          ;    OVER           ( addr len addr len )
+    .word cfa_find          ;    FIND           ( addr len cfa|0 )
+    .word cfa_dup           ;    DUP            ( addr len cfa|0 cfa|0 )
+    .word cfa_0branch       ;    IF             ( addr len cfa|0 )
     .word (interpret_else2 - (* + 2)) & $FFFF
-    .word cfa_execute       ;        EXECUTE
+    .word cfa_swap          ;        SWAP       ( addr cfa len )
+    .word cfa_drop          ;        DROP       ( addr cfa )
+    .word cfa_swap          ;        SWAP       ( cfa addr )
+    .word cfa_drop          ;        DROP       ( cfa )
+    .word cfa_execute       ;        EXECUTE    ( )
     .word cfa_branch
     .word (interpret_then2 - (* + 2)) & $FFFF
 
-interpret_else2:            ;    ELSE
-    ; TODO - NUMBER and ERROR (if not number)
-    .word cfa_error
+interpret_else2:
+    .word cfa_drop          ;        DROP       ( addr len )
+    .word cfa_number        ;        NUMBER     ( n|0 flag )
+    .word cfa_0equal        ;        NOT        ( n|0 !flag )
+    .word cfa_0branch       ;        BRANCH if number (success) leaving number on the stack
+    .word (interpret_then2 - (* + 2)) & $FFFF
+    .word cfa_drop          ;        DROP       ( )
+    .word cfa_error         ;        BOOM!
 
 interpret_then2:            ;    THEN
     .word cfa_branch        ; AGAIN
@@ -960,9 +972,126 @@ div10_skip:
     rts
 
 
+; NUMBER ( addr len -- n flag ) attempts to convert a string to a 16-bit unsigned integer
+dict_number:
+    .word dict_dot
+    .byte 6, "NUMBER"
+cfa_number:
+    .word code_number
+code_number:
+    ; Pop len into LEN, addr into WX
+    lda PSP+0,x     ; len lo (hi ignored)
+    sta LEN
+    lda PSP+2,x     ; addr lo
+    sta WX
+    lda PSP+3,x     ; addr hi
+    sta WX+1
+    inx
+    inx
+    inx
+    inx
+
+    ; Reject zero-length strings immediately
+    lda LEN
+    beq number_fail
+
+    ; ADDR holds the running result (16-bit), initialize to 0
+    lda #0
+    sta ADDR
+    sta ADDR+1
+
+    ; Y is the index into the string (0-based)
+    ldy #0
+
+number_loop:
+    ; Load character at WX+Y
+    lda (WX),y
+
+    ; Validate: c >= '0'
+    cmp #'0'
+    bcc number_fail
+
+    ; Validate: c <= '9'
+    cmp #'9'+1
+    bcs number_fail
+
+    ; digit = c - '0', push to hardware stack briefly
+    sec
+    sbc #'0'        ; A = digit (0-9)
+    pha             ; save digit - just one byte, no pointer issues
+
+    ; result * 10 = (result * 8) + (result * 2)
+    ; Step 1: TMP = result * 2
+    lda ADDR
+    asl
+    sta TMP
+    lda ADDR+1
+    rol
+    sta TMP+1
+
+    ; Step 2: ADDR = result * 8  (shift TMP left 2 more times)
+    lda TMP
+    asl
+    sta ADDR
+    lda TMP+1
+    rol
+    sta ADDR+1
+    ; shift #2
+    asl ADDR
+    rol ADDR+1
+
+    ; Step 3: ADDR = result*8 + result*2
+    clc
+    lda ADDR
+    adc TMP
+    sta ADDR
+    lda ADDR+1
+    adc TMP+1
+    sta ADDR+1
+
+    ; Step 4: ADDR = result*10 + digit
+    pla             ; digit
+    clc
+    adc ADDR
+    sta ADDR
+    bcc :+
+    inc ADDR+1
+:
+    iny
+    cpy LEN
+    bne number_loop
+
+    ; Success: push result and true flag
+    dex
+    dex
+    dex
+    dex
+    lda ADDR
+    sta PSP+2,x
+    lda ADDR+1
+    sta PSP+3,x
+    lda #$FF        ; true flag
+    sta PSP+0,x
+    sta PSP+1,x
+    jmp NEXT
+
+number_fail:
+    ; Push 0 and false flag
+    dex
+    dex
+    dex
+    dex
+    lda #0
+    sta PSP+2,x
+    sta PSP+3,x
+    sta PSP+0,x
+    sta PSP+1,x
+    jmp NEXT
+
+
 ; Pointer to the first dictionary entry
 LATEST:
-    .word dict_dot
+    .word dict_number
 
 
 ; The input buffer area
