@@ -60,6 +60,9 @@ main:
 ; The test thread: a list of CFAs
 test_thread:
     ; .word cfa_outer
+    .word cfa_lit, 1234
+    .word cfa_lit, 2345
+    .word cfa_lit, 3456
     .word cfa_interpret
     .word cfa_bye
 
@@ -818,21 +821,19 @@ interpret_outer_loop:       ; BEGIN
     .word (interpret_outer_loop - (* + 2)) & $FFFF
 interpret_then1:
 
-    .word cfa_find
-    .word cfa_dup
-    .word cfa_0branch
+    .word cfa_find          ;    FIND
+    .word cfa_dup           ;    DUP
+    .word cfa_0branch       ;    IF
     .word (interpret_else2 - (* + 2)) & $FFFF
-
-    .word cfa_execute
-
+    .word cfa_execute       ;        EXECUTE
     .word cfa_branch
     .word (interpret_then2 - (* + 2)) & $FFFF
 
-interpret_else2:
+interpret_else2:            ;    ELSE
     ; TODO - NUMBER and ERROR (if not number)
     .word cfa_error
 
-interpret_then2:
+interpret_then2:            ;    THEN
     .word cfa_branch        ; AGAIN
     .word (interpret_outer_loop - (* + 2)) & $FFFF
 
@@ -885,9 +886,83 @@ code_execute:
     jmp (W)
 
 
+; . ( n -- ) pop a number and print it in decimal
+dict_dot:
+    .word dict_execute
+    .byte 1, "."
+cfa_dot:
+    .word code_dot
+code_dot:
+    ; Load TOS into WX, pop the stack
+    lda PSP+0,x
+    sta WX
+    lda PSP+1,x
+    sta WX+1
+    inx
+    inx
+
+    ; Push digits onto the hardware stack in reverse order.
+    ; Divide WX by 10 repeatedly; each remainder is a digit.
+    ; Use a sentinel $FF to mark the bottom of the digit run.
+    lda #$FF
+    pha
+    ldy #0          ; digit count (also serves as zero-check)
+
+dot_loop:
+    ; Divide WX by 10, remainder in A
+    jsr div10
+    ; remainder is a digit - push ASCII code onto hardware stack
+    clc
+    adc #'0'
+    pha
+    iny
+    ; if quotient (now in WX) is zero, we're done
+    lda WX
+    ora WX+1
+    bne dot_loop
+
+    ; Special case: if the original value was 0, we get no digits - but
+    ; the zero check above still works because we do at least one iteration
+    ; before checking, since we check the quotient not the original value.
+
+dot_emit:
+    pla
+    cmp #$FF
+    beq dot_done
+    jsr CHROUT
+    jmp dot_emit
+
+dot_done:
+    ; emit a trailing space (standard FORTH . behavior)
+    lda #$20
+    jsr CHROUT
+    jmp NEXT
+
+
+; Unsigned 16-bit division by 10
+; Inputs:  WX = 16-bit Dividend
+; Outputs: WX = 16-bit Quotient, A = Remainder
+div10:
+    lda #0          ; Clear the remainder
+    ldy #16         ; Set loop counter for 16 bits
+div10_loop:
+    asl WX          ; Shift dividend left by 1 bit...
+    rol WX+1        ; ...shifting the highest bit into the Carry flag
+    rol             ; Rotate that bit out of Carry into the Remainder (A)
+
+    cmp #10         ; Does 10 fit into our running remainder?
+    bcc div10_skip  ; If not, skip subtraction
+    sbc #10         ; Subtract 10 (Carry remains set)
+    inc WX          ; Set the lowest bit of the quotient to 1
+div10_skip:
+    dey             ; Decrement loop counter
+    bne div10_loop  ; Repeat for all 16 bits
+    rts
+
+
 ; Pointer to the first dictionary entry
 LATEST:
-    .word dict_execute
+    .word dict_dot
 
 
 ; The input buffer area
