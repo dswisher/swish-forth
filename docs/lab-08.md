@@ -168,24 +168,27 @@ time rather than compiled into a thread.
 ```asm
 code_execute:
     lda PSP+0,x     ; load CFA lo
-    sta WX
+    sta W
     lda PSP+1,x     ; load CFA hi
-    sta WX+1
+    sta W+1
     inx
     inx
     ldy #0
-    lda (WX),y      ; read code address lo
-    sta W
+    lda (W),y       ; read code address lo
+    sta WX
     iny
-    lda (WX),y      ; read code address hi
-    sta W+1
-    jmp (W)
+    lda (W),y       ; read code address hi
+    sta WX+1
+    jmp (WX)
 ```
 
 Notice this is essentially the second half of `NEXT` - it reads through the
-CFA to get the code address and jumps to it. `W` is used here (not `WX`)
-because if the word being executed is a colon definition, `DOCOL` will need
-`WX` intact... actually, think carefully: what does `DOCOL` actually read?
+CFA to get the code address and jumps to it. It is important to use the same
+register convention as `NEXT`: the CFA goes in `W` and the code address goes
+in `WX`. `DOCOL` relies on `W` holding the CFA so it can compute the PFA as
+`W + 2`. If you put the CFA in `WX` instead, primitives will work fine (they
+ignore `W`), but any colon definition dispatched through `EXECUTE` will
+crash immediately as `DOCOL` computes a garbage `IP`.
 Make sure you use the right register here.
 
 ### INTERPRET - Putting It Together
