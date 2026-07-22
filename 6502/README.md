@@ -1,4 +1,4 @@
-# swish-forth
+# swish-forth: 6502
 
 A FORTH kernel built from scratch in 6502 assembly, targeting the
 [Commander X16](https://www.commanderx16.com/) platform.

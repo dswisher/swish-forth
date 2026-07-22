@@ -93,6 +93,25 @@ gdb-multiarch -ex "set arch riscv:rv32" -ex "target remote :1234" ./forth
 | `make shell` | Open a bash shell in the container |
 | `make clean` | Remove build artifacts |
 
+## Implementation Outline
+
+The kernel is built in small, verifiable steps. Each step has a dedicated
+doc file with design details and implementation notes.
+
+| Step | Topic | Doc |
+|------|-------|-----|
+| 1 | Register definitions and memory layout | [step-01.md](docs/step-01.md) |
+| 2 | Stack initialization | [step-02.md](docs/step-02.md) |
+| 3 | `NEXT` macro and `EXIT` | [step-03.md](docs/step-03.md) |
+| 4 | Stack primitives: `DUP`, `DROP`, `SWAP`, `OVER` | [step-04.md](docs/step-04.md) |
+| 5 | `LIT`, `BRANCH`, `0BRANCH` | [step-05.md](docs/step-05.md) |
+| 6 | `DOCOL` and hand-threaded test | [step-06.md](docs/step-06.md) |
+| 7 | `EMIT` and `KEY` | [step-07.md](docs/step-07.md) |
+| 8 | Dictionary structure, `:` and `;` | [step-08.md](docs/step-08.md) |
+| 9 | Outer interpreter: number parsing and word lookup | [step-09.md](docs/step-09.md) |
+| 10 | File I/O and `INCLUDE-FILE` | [step-10.md](docs/step-10.md) |
+| 11 | Core word set in Forth source files | [step-11.md](docs/step-11.md) |
+
 ## References
 
 - [jonesforth](https://github.com/nornagon/jonesforth) - A complete FORTH
@@ -102,6 +121,7 @@ gdb-multiarch -ex "set arch riscv:rv32" -ex "target remote :1234" ./forth
   Official ISA reference
 - [Linux RISC-V syscall table](https://jborza.com/post/2021-05-11-riscv-linux-syscalls/) -
   Syscall numbers and calling convention
+- [Forth-2012 Standard](https://forth-standard.org/standard/words) - the implementation target
 - *Threaded Interpretive Languages* by R. G. Loeliger - low-level FORTH
   implementation detail
 - [*Starting FORTH*](https://www.forth.com/wp-content/uploads/2018/01/Starting-FORTH.pdf)
