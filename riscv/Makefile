@@ -22,8 +22,8 @@ QEMU    := qemu-riscv32
 ASFLAGS := -march=rv32i -mabi=ilp32 -g
 LDFLAGS := -m elf32lriscv
 
-TARGET  := hello
-SRCS    := hello.s
+TARGET  := forth
+SRCS    := forth.s
 OBJS    := $(SRCS:.s=.o)
 
 GDB_PORT := 1234
