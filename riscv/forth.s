@@ -48,3 +48,18 @@ _start:
     li      a7, 93
     li      a0, 0
     ecall
+
+# ── EXIT ──────────────────────────────────────────────────────────────────────
+#
+# EXIT  ( -- )
+# Return from a colon definition. Pops the saved IP from the return stack
+# and resumes execution at that address.
+#
+# Return stack convention (full-descending):
+#   Push: RSP -= CELL, then store
+#   Pop:  load from RSP, then RSP += CELL
+
+    defword "EXIT", EXIT, 0
+    lw      s0, 0(s2)           # IP (s0) = *RSP — restore saved IP
+    addi    s2, s2, 4           # RSP (s2) += CELL — pop return stack
+    NEXT

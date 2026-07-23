@@ -35,7 +35,7 @@ DOCKER_RUN := docker run --rm -i \
 
 # ── Phony targets ──────────────────────────────────────────────────────────────
 
-.PHONY: all image run debug shell clean
+.PHONY: all image run debug shell clean disasm
 
 all: $(TARGET)
 
@@ -79,3 +79,7 @@ shell:
 # Remove build artifacts (not the Docker image)
 clean:
 	$(DOCKER_RUN) sh -c 'rm -f $(TARGET) $(OBJS)'
+
+# Disassemble the binary (useful for verifying macro expansion)
+disasm: $(TARGET)
+	$(DOCKER_RUN) riscv64-linux-gnu-objdump -d -M no-aliases $(TARGET)
