@@ -45,30 +45,58 @@ _start:
     la      s2, rsp_top
 
     # -- test harness ----------------------------------------------------------
-    # Push two values onto the data stack manually (LIT is not yet available).
-    # After setup the stack looks like (top at DSP):
-    #   DSP+0 -> 20  (x2, top)
-    #   DSP+4 -> 10  (x1, second)
+    # Hand-threaded sequence to exercise LIT, 0BRANCH, and BRANCH.
     #
-    # Push 10 (a)
-    addi    s3, s3, -4
-    li      t0, 10
-    sw      t0, 0(s3)
-    # Push 20 (b)
-    addi    s3, s3, -4
-    li      t0, 20
-    sw      t0, 0(s3)
+    # The thread below does the following:
+    #   LIT 0        -- push 0 (false)
+    #   0BRANCH +8   -- branch taken (0 is false); skips the next 2 cells
+    #   LIT 99       -- skipped
+    #   LIT 42       -- lands here; push 42
+    #   LIT 1        -- push 1 (true)
+    #   0BRANCH +4   -- branch NOT taken (1 is true); skip 1 cell
+    #   LIT 77       -- skipped
+    #   BRANCH -24   -- unconditional branch back to "LIT 42" cell
+    #                   (offset is relative to the offset cell itself;
+    #                    -24 steps back over: offset cell, LIT 77 cfa,
+    #                    0BRANCH cfa, LIT 1 value, LIT 1 cfa, LIT 42 value,
+    #                    LIT 42 cfa = 6 cells = 24 bytes)
+    #
+    # In GDB, set a breakpoint on LITERAL_code and ZBRANCH_code and watch
+    # IP and the stack to verify each step.
+    #
+    # The BRANCH creates an infinite loop intentionally - hit the breakpoint
+    # a couple of times then quit.
 
-    # Point IP at the halt thread so NEXT lands cleanly in exit(0).
-    la      s0, halt_thread
+    la      s0, test_thread
+    NEXT
 
-    # Call the word directly (bypassing the ITC machinery - direct jump to code).
-    j       SWAP_code
+    .section .rodata
+    .balign CELL
+test_thread:
+    .word   LIT_cfa             # LIT
+    .word   0                   # value: 0 (false)
+    .word   ZBRANCH_cfa         # 0BRANCH
+    .word   12                  # offset: +4; NEXT adds 4 = skip 2 cells (LIT 99), land on NOP
+    .word   LIT_cfa             # LIT  <-- skipped when branch taken
+    .word   99                  # value: 99
+
+    .word   NOP_cfa             # debug hack    <-- branch target (for now)
+
+    .word   LIT_cfa             # LIT  <-- branch target
+    .word   42                  # value: 42
+    .word   LIT_cfa             # LIT
+    .word   1                   # value: 1 (true)
+    .word   ZBRANCH_cfa         # 0BRANCH
+    .word   4                   # offset: +4; NEXT adds 4 = skip 2 cells (LIT 77)
+    .word   LIT_cfa             # LIT  <-- skipped when branch not taken
+    .word   77                  # value: 77
+    .word   BRANCH_cfa          # BRANCH
+    .word   -24                 # offset: -24; NEXT adds 4 = back 5 cells to LIT 42
 
 # -- Halt thread ---------------------------------------------------------------
-# A one-entry hand-threaded sequence that NEXT executes after OVER completes.
-# halt_thread is an array of CFAs; the single entry points to halt_word_cfa
-# whose code field points to halt_code, which calls exit(0).
+# A one-entry hand-threaded sequence used to cleanly terminate via NEXT.
+# halt_thread contains a single CFA entry; halt_word_cfa's code field points
+# to halt_code which calls exit(0).
 
     .section .rodata
     .balign CELL
@@ -126,7 +154,7 @@ halt_code:
     defword "DUP", DUP, OVER_header
     lw      t0, 0(s3)           # TMP = x - load item
     addi    s3, s3, -4          # DSP -= CELL - make room
-    sw      t0, 0(s3)           # *DSP = a - push copy of item
+    sw      t0, 0(s3)           # *DSP = x - push copy of item
     NEXT
 
 # -- DROP ----------------------------------------------------------------------
@@ -148,5 +176,45 @@ halt_code:
     lw      t1, 4(s3)           # TMP1 = x1
     sw      t0, 4(s3)           # *DSP+4 = x2
     sw      t1, 0(s3)           # *DSP+0 = x1
+    NEXT
+
+# -- LIT -----------------------------------------------------------------------
+# LIT ( -- x ) pushes the literal value in the next cell onto the stack
+
+    defword "LIT", LIT, SWAP_header
+    lw      t0, 0(s0)           # TMP = *IP
+    addi    s3, s3, -4          # DSP -= CELL (push)
+    sw      t0, 0(s3)           # *DSP = a - push copy of item
+    addi    s0, s0, 4           # IP += 4
+    NEXT
+
+# -- BRANCH --------------------------------------------------------------------
+#
+
+    defword "BRANCH", BRANCH, LIT_header
+    lw      t0, 0(s0)           # TMP = *IP
+    add     s0, s0, t0          # IP = IP + TMP
+    NEXT
+
+# -- 0BRANCH -------------------------------------------------------------------
+#
+
+    defword "0BRANCH", ZBRANCH, BRANCH_header
+    lw      t0, 0(s3)           # TMP = x1 (flag)
+    addi    s3, s3, 4           # DSP += CELL (pop)
+    beqz    t0, bz_true
+    addi    s0, s0, 4           # IP += 4
+    j       bz_done
+bz_true:
+    lw      t0, 0(s0)           # TMP = *IP
+    add     s0, s0, t0          # IP = IP + TMP
+bz_done:
+    NEXT
+
+# -- NOP -----------------------------------------------------------------------
+# TODO - this is a temporary debugging word - remove it once assembly-level debugging is done
+#
+    defword "NOP", NOP, ZBRANCH_header
+    nop
     NEXT
 
