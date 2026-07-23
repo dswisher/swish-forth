@@ -9,18 +9,13 @@
 # ── Register assignments ───────────────────────────────────────────────────────
 #
 # We use the s (saved) registers so these are preserved across any C calls.
-
-#   IP  - Instruction Pointer: address of the next word's CFA in the thread
-#   W   - Working register: address of the current word's CFA
-#   RSP - Return Stack Pointer: Forth return stack (separate from sp)
-#   DSP - Data Stack Pointer: Forth parameter stack
-#   TMP - Scratch register for use inside primitives
-
-.equ IP,  s0
-.equ W,   s1
-.equ RSP, s2
-.equ DSP, s3
-.equ TMP, s4
+# These are conventions only; the assembler uses the real register names below.
+#
+#   s0  (IP)  - Instruction Pointer: address of the next word's CFA in the thread
+#   s1  (W)   - Working register: address of the current word's CFA
+#   s2  (RSP) - Return Stack Pointer: Forth return stack (separate from sp)
+#   s3  (DSP) - Data Stack Pointer: Forth parameter stack
+#   s4  (TMP) - Scratch register for use inside primitives
 
 # ── Cell size ─────────────────────────────────────────────────────────────────
 

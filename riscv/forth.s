@@ -36,8 +36,13 @@ rsp_top:                        # RSP starts here (top of return stack buffer)
     .globl _start
 
 _start:
-    # Step 1: nothing to execute yet.
-    # Subsequent steps will initialise DSP, RSP, and launch the interpreter.
+    # Initialise the Forth data stack pointer (s3 = DSP).
+    # DSP points to the top item; stack grows downward into dsp_buf.
+    la      s3, dsp_top
+
+    # Initialise the Forth return stack pointer (s2 = RSP).
+    # RSP points to the top item; stack grows downward into rsp_buf.
+    la      s2, rsp_top
 
     # exit(0)
     li      a7, 93

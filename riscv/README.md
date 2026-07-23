@@ -119,6 +119,7 @@ doc file with design details and implementation notes.
   primary conceptual reference for this project
 - [RISC-V ISA Specification](https://riscv.org/technical/specifications/) -
   Official ISA reference
+- [RISC-V Cheat Sheet](https://projectf.io/posts/riscv-cheat-sheet/)
 - [Linux RISC-V syscall table](https://jborza.com/post/2021-05-11-riscv-linux-syscalls/) -
   Syscall numbers and calling convention
 - [Forth-2012 Standard](https://forth-standard.org/standard/words) - the implementation target
