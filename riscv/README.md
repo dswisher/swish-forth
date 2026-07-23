@@ -122,6 +122,7 @@ doc file with design details and implementation notes.
 - [RISC-V Cheat Sheet](https://projectf.io/posts/riscv-cheat-sheet/)
 - [Linux RISC-V syscall table](https://jborza.com/post/2021-05-11-riscv-linux-syscalls/) -
   Syscall numbers and calling convention
+- [GDB Cheat Sheet](https://github.com/reveng007/GDB-Cheat-Sheet)
 - [Forth-2012 Standard](https://forth-standard.org/standard/words) - the implementation target
 - *Threaded Interpretive Languages* by R. G. Loeliger - low-level FORTH
   implementation detail

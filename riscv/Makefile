@@ -62,11 +62,10 @@ debug: $(TARGET)
 	    $(IMAGE) \
 	    sh -c '$(QEMU) -g $(GDB_PORT) ./$(TARGET) & \
 	           sleep 0.2 && \
-	           $(GDB) -q \
+	    $(GDB) -q \
 	               -ex "set architecture riscv:rv32" \
 	               -ex "target remote :$(GDB_PORT)" \
-	               -ex "layout asm" \
-	               -ex "layout regs" \
+	               -ex "layout split" \
 	               ./$(TARGET)'
 
 # Open an interactive shell in the container

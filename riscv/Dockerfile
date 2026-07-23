@@ -12,4 +12,7 @@ RUN apt-get update && apt-get install -y \
     file \
     && rm -rf /var/lib/apt/lists/*
 
+COPY .gdbinit /root/.gdbinit
+COPY .inputrc /root/.inputrc
+
 WORKDIR /work

@@ -6,7 +6,7 @@
 # to a machine-code routine. NEXT loads the CFA into W, then jumps to
 # the address that W points to.
 
-# ── Register assignments ───────────────────────────────────────────────────────
+# -- Register assignments ------------------------------------------------------
 #
 # We use the s (saved) registers so these are preserved across any C calls.
 # These are conventions only; the assembler uses the real register names below.
@@ -15,18 +15,17 @@
 #   s1  (W)   - Working register: address of the current word's CFA
 #   s2  (RSP) - Return Stack Pointer: Forth return stack (separate from sp)
 #   s3  (DSP) - Data Stack Pointer: Forth parameter stack
-#   s4  (TMP) - Scratch register for use inside primitives
 
-# ── Cell size ─────────────────────────────────────────────────────────────────
+# -- Cell size -----------------------------------------------------------------
 
 .equ CELL, 4                    # 32-bit architecture: one cell = 4 bytes
 
-# ── Stack sizes ───────────────────────────────────────────────────────────────
+# -- Stack sizes ---------------------------------------------------------------
 
 .equ DSTACK_SIZE, 0x10000       # 64KB data stack (~16K cells)
 .equ RSTACK_SIZE, 0x10000       # 64KB return stack (~16K cells)
 
-# ── NEXT macro ────────────────────────────────────────────────────────────────
+# -- NEXT macro ----------------------------------------------------------------
 #
 # NEXT is the inner interpreter. It is not a Forth word but a macro expanded
 # inline at the end of every primitive.
@@ -42,13 +41,13 @@
 #   4. jump to TMP    execute the code
 
 .macro NEXT
-    lw      s1, 0(s0)           # W (s1) = *IP  — fetch next CFA
-    addi    s0, s0, 4           # IP (s0) += CELL — advance IP
-    lw      s4, 0(s1)           # TMP (s4) = *W  — fetch code pointer
-    jr      s4                  # jump to code
+    lw      s1, 0(s0)           # W (s1) = *IP  - fetch next CFA
+    addi    s0, s0, 4           # IP (s0) += CELL - advance IP
+    lw      t0, 0(s1)           # TMP (t0) = *W  - fetch code pointer
+    jr      t0                  # jump to code
 .endm
 
-# ── defword macro ─────────────────────────────────────────────────────────────
+# -- defword macro -------------------------------------------------------------
 #
 # defword creates a dictionary entry header for a primitive word.
 #
