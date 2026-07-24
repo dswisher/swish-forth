@@ -1,7 +1,10 @@
-# forth.s - swish-forth kernel: RISC-V 32-bit, Linux userspace
+# forth.s - swish-forth kernel: RISC-V 32-bit, bare-metal
 #
 # Threading model: Indirect Threaded Code (ITC)
 # See docs/step-01.md for design rationale.
+#
+# Platform-specific I/O (EMIT, KEY) and halt logic live in platform/*.s.
+# This file contains only platform-independent kernel code.
 
     .include "forth.inc"
 
@@ -29,10 +32,6 @@ dsp_top:                        # DSP starts here (top of data stack buffer)
 rsp_buf:
     .space RSTACK_SIZE
 rsp_top:                        # RSP starts here (top of return stack buffer)
-
-    .balign CELL
-emit_buf:
-    .space 1                    # scratch byte for EMIT/KEY
 
 
 # -- Entry point ---------------------------------------------------------------
@@ -74,7 +73,7 @@ test_thread_cfa:
 # -- Halt thread ---------------------------------------------------------------
 # A one-entry hand-threaded sequence used to cleanly terminate via NEXT.
 # halt_thread contains a single CFA entry; halt_word_cfa's code field points
-# to halt_code which calls exit(0).
+# to halt_code which is provided by the platform driver.
 
     .section .rodata
     .balign CELL
@@ -83,17 +82,11 @@ halt_thread:
 
     .balign CELL
 halt_word_cfa:
-    .word   halt_code
-
-    .text
-    .balign CELL
-halt_code:
-    li      a7, 93
-    li      a0, 0
-    ecall
+    .word   halt_code           # halt_code is defined in platform/*.s
 
 
 # -- DOCOL ---------------------------------------------------------------------
+    .text
 DOCOL_code:
     # Push IP onto the return stack
     mv      t0, s0              # TMP = IP
@@ -181,13 +174,12 @@ DOCOL_code:
     defword "LIT", LIT, SWAP_header
     lw      t0, 0(s0)           # TMP = *IP
     addi    s3, s3, -4          # DSP -= CELL (push)
-    sw      t0, 0(s3)           # *DSP = a - push copy of item
+    sw      t0, 0(s3)           # *DSP = literal value
     addi    s0, s0, 4           # IP += 4
     NEXT
 
 
 # -- BRANCH --------------------------------------------------------------------
-#
 
     defword "BRANCH", BRANCH, LIT_header
     lw      t0, 0(s0)           # TMP = *IP
@@ -196,7 +188,6 @@ DOCOL_code:
 
 
 # -- 0BRANCH -------------------------------------------------------------------
-#
 
     defword "0BRANCH", ZBRANCH, BRANCH_header
     lw      t0, 0(s3)           # TMP = x1 (flag)
@@ -209,34 +200,3 @@ bz_true:
     add     s0, s0, t0          # IP = IP + TMP
 bz_done:
     NEXT
-
-
-# -- EMIT ----------------------------------------------------------------------
-#
-# EMIT  ( x -- )
-# If x is a graphic character in the implementation-defined character set, display x. 
-
-    defword "EMIT", EMIT, ZBRANCH_header
-    # Pop item off the stack and store 1 byte into the buffer
-    lw      t0, 0(s3)           # TMP = char
-    addi    s3, s3, 4           # pop DSP
-    la      t1, emit_buf        # buffer address
-    sb      t0, 0(t1)           # store low byte to emit_buf
-
-    # Make the call to write a character
-    li      a7, 64              # SYS_write
-    li      a0, 1               # stdout
-    mv      a1, t1              # buffer address in a1 (copied from t1)
-    li      a2, 1               # length, I assume?
-    ecall
-
-    NEXT
-
-
-# -- NOP -----------------------------------------------------------------------
-# TODO - this is a temporary debugging word - remove it once assembly-level debugging is done
-#
-    defword "NOP", NOP, EMIT_header
-    nop
-    NEXT
-

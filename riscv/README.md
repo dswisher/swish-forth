@@ -1,18 +1,18 @@
 # swish-forth: RISC-V
 
-A FORTH kernel built from scratch in RISC-V 32-bit assembly, targeting a
-Linux userspace environment via QEMU. This is a continuation of the 6502
-work in the sibling directory, restarted on a more ergonomic architecture
-with better debugging tooling.
+A FORTH kernel built from scratch in RISC-V 32-bit assembly, targeting
+bare-metal via QEMU system-mode. This is a continuation of the 6502 work
+in the sibling directory, restarted on a more ergonomic architecture with
+better debugging tooling.
 
 ## Goals
 
 - Implement a minimal FORTH kernel in RISC-V 32-bit assembly
 - Get to self-hosting quickly: implement a small assembly core, then write
   the rest of the kernel in FORTH itself (e.g., `INTERPRET` as a FORTH word)
-- Load FORTH source files from disk so the host editor (Neovim) can be used
-  directly, with no copy step
-- Use a consistent development environment across Mac, Windows, and Linux
+- Keep the kernel platform-independent; swap only a small driver file to
+  target different hardware (QEMU `virt`, Raspberry Pi Pico 2, etc.)
+- Use a native macOS toolchain — no Docker required
 
 ## Key Decisions
 
@@ -27,71 +27,96 @@ to Apple Silicon AArch64 anyway). RISC-V 32-bit offers:
 - The same register richness as 68000 without its quirks
 - First-class GDB support via QEMU's GDB remote stub
 
-### No bare-metal: Linux syscalls
+### Bare-metal: no Linux syscalls
 
-Rather than implementing UART and filesystem drivers on bare-metal, the
-kernel runs as a Linux process and uses Linux syscalls for all I/O:
+The kernel runs on bare hardware (or QEMU system-mode emulation) with no
+OS underneath. All I/O is done via memory-mapped UART registers. This
+approach:
 
-- Console input/output: `read` (syscall 63) and `write` (syscall 64)
-- File I/O: `open`/`read`/`close` for loading FORTH source files
-- `exit` (syscall 93) for clean termination
+- Eliminates Docker — the native macOS toolchain works directly
+- Makes the kernel portable to real hardware with only a linker script and
+  driver file swap
+- Enables clean two-window debugging (UART I/O in one terminal, GDB in the
+  other) without container boundary issues
 
-This means zero driver code — all effort goes into FORTH, not hardware.
-This is the same approach used by the well-known
-[jonesforth](https://github.com/nornagon/jonesforth) kernel (which targets
-x86 Linux).
+See [docs/bare-metal.md](docs/bare-metal.md) for the full rationale and
+migration notes.
 
-### Development environment: Docker + Ubuntu 24.04
+### Platform abstraction
 
-QEMU user-mode emulation (`qemu-riscv32`) only works on Linux hosts, not
-macOS. To get a consistent environment across Mac, Windows, and Linux,
-everything runs inside a Docker container:
+Platform-specific code lives in `platform/<name>.s`:
 
-- **Image:** Ubuntu 24.04 (Alpine lacks the required cross-toolchain packages)
-- **Toolchain:** `binutils-riscv64-linux-gnu` + `gcc-riscv64-linux-gnu`
-  (the `riscv64` prefix is misleading — these tools emit 32-bit code when
-  passed `-march=rv32i -mabi=ilp32`)
-- **Emulator:** `qemu-user` (provides `qemu-riscv32`)
-- **Debugger:** `gdb-multiarch`
+| File | Target |
+|------|--------|
+| `platform/qemu-virt.s` | QEMU `virt` machine (development) |
+| `platform/pico2.s` | Raspberry Pi Pico 2 / RP2350 (future) |
 
-Source files are mounted from the host into the container at `/work`, so
-Neovim on the host edits the same files that are assembled and run inside
-the container.
+Each platform file provides `platform_putc`, `platform_getc`, `halt_code`,
+and the `EMIT`, `KEY`, `NOP` Forth words. `forth.s` and `forth.inc` are
+platform-independent.
+
+### BLOCK words instead of INCLUDE-FILE
+
+Rather than implementing filesystem syscalls, Forth source files will be
+assembled into read-only memory blocks (ANS Forth BLOCK word set). A small
+script generates the assembly from `.fth` source files. This works
+identically on QEMU and on real hardware where source lives in flash.
 
 ### Debugging: QEMU GDB stub
 
-GDB connects to QEMU's built-in GDB remote stub rather than attaching to
-a local process (which would require ptrace permissions):
+Two-terminal workflow — no spin-loop tricks needed. QEMU system-mode halts
+before the first instruction when launched with `-S`:
 
 ```sh
-# Terminal 1
-qemu-riscv32 -g 1234 ./forth
+# Terminal 1 (I/O appears here)
+make qemu-wait
 
 # Terminal 2
-gdb-multiarch -ex "set arch riscv:rv32" -ex "target remote :1234" ./forth
+make gdb-attach
 ```
 
-`make debug` automates both steps in a single container session.
+QEMU blocks waiting for GDB, so there is no race condition.
 
 ## Toolchain
 
-| Tool | Package | Purpose |
-|------|---------|---------|
-| `riscv64-linux-gnu-as` | `binutils-riscv64-linux-gnu` | Assembler |
-| `riscv64-linux-gnu-ld` | `binutils-riscv64-linux-gnu` | Linker |
-| `qemu-riscv32` | `qemu-user` | Run RV32 Linux ELF binaries |
-| `gdb-multiarch` | `gdb-multiarch` | Debugger |
+Install once via Homebrew:
+
+```sh
+brew install riscv64-elf-binutils riscv64-elf-gdb qemu
+```
+
+| Tool | Homebrew package | Purpose |
+|------|-----------------|---------|
+| `riscv64-elf-as` | `riscv64-elf-binutils` | Assembler |
+| `riscv64-elf-ld` | `riscv64-elf-binutils` | Linker |
+| `riscv64-elf-objdump` | `riscv64-elf-binutils` | Disassembler |
+| `riscv64-elf-gdb` | `riscv64-elf-gdb` | Debugger |
+| `qemu-system-riscv32` | `qemu` | System-mode emulator |
 
 ## Make Targets
 
 | Target | Description |
 |--------|-------------|
-| `make image` | Build the Docker image (run once, or after Dockerfile changes) |
 | `make` | Assemble and link |
-| `make run` | Run the binary under QEMU |
-| `make debug` | Run under QEMU with GDB stub and launch GDB |
-| `make shell` | Open a bash shell in the container |
+| `make run` | Run under QEMU (Ctrl-A X to exit) |
+| `make qemu-wait` | Run under QEMU, halted, waiting for GDB (window 1) |
+| `make gdb-attach` | Connect GDB to a waiting QEMU instance (window 2) |
+| `make disasm` | Disassemble the binary |
 | `make clean` | Remove build artifacts |
+
+## File Layout
+
+```
+forth.s              - Platform-independent kernel
+forth.inc            - Register assignments, NEXT macro, defword macro
+forth.ld             - Linker script (QEMU virt / bare-metal)
+platform/
+  qemu-virt.s        - UART driver + EMIT/KEY/NOP for QEMU virt machine
+Makefile
+docs/
+  step-NN.md         - Per-step design notes
+  bare-metal.md      - Rationale and notes for the bare-metal migration
+```
 
 ## Implementation Outline
 
@@ -109,7 +134,7 @@ doc file with design details and implementation notes.
 | 7 | `EMIT` and `KEY` | [step-07.md](docs/step-07.md) |
 | 8 | Dictionary structure, `:` and `;` | [step-08.md](docs/step-08.md) |
 | 9 | Outer interpreter: number parsing and word lookup | [step-09.md](docs/step-09.md) |
-| 10 | File I/O and `INCLUDE-FILE` | [step-10.md](docs/step-10.md) |
+| 10 | `BLOCK` and `LOAD` (replaces file I/O) | [step-10.md](docs/step-10.md) |
 | 11 | Core word set in Forth source files | [step-11.md](docs/step-11.md) |
 
 ## References
@@ -120,11 +145,13 @@ doc file with design details and implementation notes.
 - [RISC-V ISA Specification](https://riscv.org/technical/specifications/) -
   Official ISA reference
 - [RISC-V Cheat Sheet](https://projectf.io/posts/riscv-cheat-sheet/)
-- [Linux RISC-V syscall table](https://jborza.com/post/2021-05-11-riscv-linux-syscalls/) -
-  Syscall numbers and calling convention
+- [QEMU virt machine](https://www.qemu.org/docs/master/system/riscv/virt.html) -
+  Memory map and peripheral addresses
 - [GDB Cheat Sheet](https://github.com/reveng007/GDB-Cheat-Sheet)
 - [Forth-2012 Standard](https://forth-standard.org/standard/words) - the implementation target
 - *Threaded Interpretive Languages* by R. G. Loeliger - low-level FORTH
   implementation detail
 - [*Starting FORTH*](https://www.forth.com/wp-content/uploads/2018/01/Starting-FORTH.pdf)
   by Leo Brodie - the classic FORTH introduction
+- [RP2350 datasheet](https://datasheets.raspberrypi.com/rp2350/rp2350-datasheet.pdf) -
+  For the eventual Raspberry Pi Pico 2 port

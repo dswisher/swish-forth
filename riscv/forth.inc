@@ -5,6 +5,9 @@
 # In ITC, every word has a Code Field Address (CFA) containing a pointer
 # to a machine-code routine. NEXT loads the CFA into W, then jumps to
 # the address that W points to.
+#
+# This file is platform-independent. Platform-specific constants
+# (UART addresses, exit mechanism) live in platform/*.s.
 
 # -- Register assignments ------------------------------------------------------
 #
@@ -73,6 +76,8 @@
 .macro defword name, label, link
     .section .rodata
     .balign CELL
+    .globl  \label\()_header
+    .globl  \label\()_cfa
 \label\()_header:
     .word   \link               # link to previous word
     .byte   (.Lname_end_\label - .Lname_start_\label)  # name length
@@ -84,5 +89,6 @@
     .word   \label\()_code      # code field: points to the code label
     .text                       # return to .text for the code body
     .balign CELL
+    .globl  \label\()_code
 \label\()_code:                 # code label follows immediately in .text
 .endm

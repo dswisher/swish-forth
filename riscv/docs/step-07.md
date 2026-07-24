@@ -8,52 +8,50 @@ output from the Forth kernel itself.
 
 ## Background
 
-Both words are thin wrappers around Linux syscalls. No buffering, no
-formatting — just raw character I/O.
+Both words are thin wrappers around platform UART routines. No buffering,
+no formatting — just raw character I/O. The platform driver provides
+`platform_putc` and `platform_getc`; `EMIT` and `KEY` call them directly.
 
 ### EMIT
 
-`EMIT` pops a character code from the data stack and writes it to stdout.
+`EMIT` pops a character code from the data stack and writes it to the
+output device.
 
 Stack effect: `( char -- )`
 
-```
-syscall: write(fd=1, buf=&char, len=1)
-  a7 = 64    # SYS_write
-  a0 = 1     # stdout
-  a1 = addr of char (we'll use a scratch buffer in .bss)
-  a2 = 1
-  ecall
+```asm
+defword "EMIT", EMIT, ZBRANCH_header
+    lw      a0, 0(s3)       # a0 = char
+    addi    s3, s3, 4       # pop DSP
+    call    platform_putc
+    NEXT
 ```
 
 ### KEY
 
-`KEY` reads one character from stdin and pushes its code onto the data
-stack. Blocks until a character is available.
+`KEY` reads one character from the input device and pushes it onto the
+data stack. Blocks until a character is available.
 
 Stack effect: `( -- char )`
 
+```asm
+defword "KEY", KEY, EMIT_header
+    call    platform_getc
+    addi    s3, s3, -4      # push DSP
+    sw      a0, 0(s3)       # *DSP = char
+    NEXT
 ```
-syscall: read(fd=0, buf=&char, len=1)
-  a7 = 63    # SYS_read
-  a0 = 0     # stdin
-  a1 = addr of scratch buffer
-  a2 = 1
-  ecall
-```
 
-### Syscall Register Convention (RISC-V Linux)
+### Platform driver interface
 
-| Register | Role |
-|----------|------|
-| `a7` | Syscall number |
-| `a0` | Arg 1 / return value |
-| `a1` | Arg 2 |
-| `a2` | Arg 3 |
-| `ecall` | Invoke the syscall |
+| Symbol | Description |
+|--------|-------------|
+| `platform_putc` | Transmit char in `a0`; clobbers `t0`, `t1` |
+| `platform_getc` | Receive char into `a0`, blocking; clobbers `t0`, `t1` |
 
-Note: `a0`–`a6` are caller-saved, so they can be used freely inside
-primitives without conflicting with the Forth registers (`s0`–`s4`).
+For the QEMU `virt` machine these are simple NS16550A UART poll loops.
+See `platform/qemu-virt.s` for the implementation and
+[docs/bare-metal.md](bare-metal.md) for the hardware details.
 
 ## Forth-2012 Reference
 
@@ -62,13 +60,17 @@ primitives without conflicting with the Forth registers (`s0`–`s4`).
 
 ## Files
 
-- `forth.s` — add `EMIT`, `KEY`, scratch char buffer in `.bss` (update)
+- `platform/qemu-virt.s` — `platform_putc`, `platform_getc`, `EMIT`, `KEY`
 
 ## Verification
 
-Write a hand-threaded sequence that uses `LIT` to push the ASCII code for
-`'!'` and calls `EMIT`. Running `make run` should print `!` to the
-terminal. Also test `KEY` followed by `EMIT` to echo a character back.
+The test harness in `forth.s` pushes the ASCII code for `!` (33) with `LIT`
+and calls `EMIT`. Running `make run` should print `!` and exit cleanly.
+
+For `KEY`: add a hand-threaded sequence calling `KEY` then `EMIT` to echo a
+character back. In the two-window debug setup (`make qemu-wait` /
+`make gdb-attach`), type a character in the QEMU terminal after the `read`
+unblocks.
 
 ## Next Step
 

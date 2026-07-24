@@ -1,76 +1,102 @@
-# Step 10: File I/O and INCLUDE-FILE
+# Step 10: BLOCK and LOAD
 
 ## Goal
 
-Implement file I/O primitives and `INCLUDE-FILE`. After this step, Forth
-source files edited in Neovim on the host can be loaded directly into the
-running kernel. This is the escape from assembly — all subsequent words
-are written in Forth.
+Make Forth source files loadable into the running kernel without filesystem
+syscalls. After this step, the kernel can load and execute Forth source
+written on the host, enabling the escape from assembly — all subsequent
+words are written in Forth.
 
 ## Background
 
-### Linux File Syscalls
+Because the kernel runs bare-metal (no OS, no filesystem), `INCLUDE-FILE`
+is not available. Instead, Forth source is assembled directly into
+read-only memory as 1 KB blocks following the ANS Forth BLOCK word set.
 
-| Syscall | Number | Purpose |
-|---------|--------|---------|
-| `openat` | 56 | Open a file, returns file descriptor |
-| `read` | 63 | Read bytes from a file descriptor |
-| `close` | 57 | Close a file descriptor |
+A host-side script (`tools/mkblocks.py`) reads `.fth` source files and
+emits an assembly file (`blocks.s`) with the contents padded to 1024 bytes
+per block. `blocks.s` is assembled and linked alongside `forth.s`; the
+resulting binary contains the source in a read-only region that the Forth
+`BLOCK` word indexes by block number.
 
-### Assembly primitives needed
+On the Raspberry Pi Pico 2 the same block data lives in flash. The kernel
+is identical; only the linker script changes.
 
-| Word | Stack effect | Description |
-|------|-------------|-------------|
-| `OPEN-FILE` | `( addr len fam -- fd ior )` | Open a file by name |
-| `READ-FILE` | `( addr len fd -- u ior )` | Read bytes from a file |
-| `CLOSE-FILE` | `( fd -- ior )` | Close a file |
+## Word definitions
 
-`ior` is an I/O result code: 0 means success, non-zero is an error code
-(the negated Linux errno).
+### BLOCK  ( u -- addr )
 
-`fam` is the file access method: `R/O` (read-only) is all we need for
-loading source files.
-
-### INCLUDE-FILE (written in Forth)
-
-`INCLUDE-FILE` takes a file-id (file descriptor) on the stack, redirects
-the input source to that file, and runs the interpreter until EOF. It is
-the Forth-2012 standard word for loading source files.
+Return the address of block `u` in the read-only block region. No transfer
+from disk — the data is already in memory.
 
 ```forth
-: INCLUDE-FILE  ( fileid -- )
-    ... redirect input, run INTERPRET until EOF, restore input ... ;
+: BLOCK  ( u -- addr )
+    1024 *  block_base + ;
 ```
 
-### INCLUDED (written in Forth)
+`block_base` is a constant assembled into `blocks.s` pointing to the start
+of the block region.
 
-A convenience wrapper that takes a filename string and calls `OPEN-FILE`
-then `INCLUDE-FILE`:
+### LOAD  ( u -- )
+
+Interpret block `u` as Forth source.
 
 ```forth
-: INCLUDED  ( addr len -- )
-    R/O OPEN-FILE THROW
-    INCLUDE-FILE ;
+: LOAD  ( u -- )
+    BLOCK  1024  EVALUATE ;
 ```
+
+`EVALUATE` is the standard word that interprets a string as Forth source.
+It is implemented in a later step.
+
+### THRU  ( u1 u2 -- )
+
+Convenience word to load a range of blocks.
+
+```forth
+: THRU  ( u1 u2 -- )
+    1+ SWAP DO  I LOAD  LOOP ;
+```
+
+## `tools/mkblocks.py` script
+
+Takes one or more `.fth` source files and emits an assembly file with the
+block data:
+
+```
+usage: mkblocks.py [-o output.s] source1.fth [source2.fth ...]
+```
+
+Each 1024-byte block corresponds to one screen of Forth source (the
+traditional Forth block editor unit). Lines are padded or truncated to fit.
+
+## ANS Forth BLOCK word set
+
+| Word | Stack | Description |
+|------|-------|-------------|
+| `BLOCK` | `( u -- addr )` | Address of block u |
+| `LOAD` | `( u -- )` | Interpret block u |
+| `THRU` | `( u1 u2 -- )` | Load blocks u1 through u2 |
+| `LIST` | `( u -- )` | Display block u (optional, useful for debugging) |
 
 ## Forth-2012 Reference
 
-- [`INCLUDE-FILE`](https://forth-standard.org/standard/file/INCLUDE-FILE)
-- [`INCLUDED`](https://forth-standard.org/standard/file/INCLUDED)
-- [`OPEN-FILE`](https://forth-standard.org/standard/file/OPEN-FILE)
-- [`READ-FILE`](https://forth-standard.org/standard/file/READ-FILE)
-- [`CLOSE-FILE`](https://forth-standard.org/standard/file/CLOSE-FILE)
-- [`R/O`](https://forth-standard.org/standard/file/RO)
+- [`BLOCK`](https://forth-standard.org/standard/block/BLOCK)
+- [`LOAD`](https://forth-standard.org/standard/block/LOAD)
+- [`THRU`](https://forth-standard.org/standard/block/THRU)
 
 ## Files
 
-- `forth.s` — add `OPEN-FILE`, `READ-FILE`, `CLOSE-FILE`, `R/O` (update)
-- `forth.fs` — add `INCLUDE-FILE`, `INCLUDED` in Forth (update)
+- `tools/mkblocks.py` — host-side script to generate `blocks.s` (new)
+- `blocks.s` — generated assembly containing block data (generated, not checked in)
+- `forth.s` / `forth.fs` — add `BLOCK`, `LOAD`, `THRU` (update)
+- `Makefile` — add rule to run `mkblocks.py` and assemble `blocks.s` (update)
 
 ## Verification
 
-Create a small test file `test.fs` containing a colon definition. Load it
-with `INCLUDED` and call the defined word. Confirm it executes correctly.
+Create a small test file `test.fth` containing a colon definition. Generate
+`blocks.s` with `mkblocks.py`, build, run, and `LOAD` block 0. Confirm the
+defined word executes correctly.
 
 ## Next Step
 
