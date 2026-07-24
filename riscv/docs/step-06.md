@@ -29,19 +29,28 @@ return stack to return to the caller.
 ### Hand-Threaded Test
 
 A hand-threaded definition is one we write by hand as a list of addresses
-in the `.data` section, rather than having the compiler generate it. For
+in the `.rodata` section, rather than having the compiler generate it. For
 example, a word that duplicates the top of stack and then exits:
 
 ```asm
-.data
-test_word:
+.rodata
+test_word_cfa:
     .word DOCOL_code    # code field: points to DOCOL
     .word DUP_cfa       # parameter field: call DUP
     .word EXIT_cfa      #   then EXIT
 ```
 
-To run it, `_start` sets `IP` to point just past the code field (the
-parameter field), then executes `NEXT`.
+To run it, `_start` constructs a small calling thread in `.rodata` that
+contains `test_word_cfa`, loads `IP` to point at that thread, and fires
+`NEXT`. NEXT fetches `test_word_cfa` into `W`, loads `DOCOL_code` from
+the code field, and jumps to `DOCOL`. This exercises the complete path:
+
+```
+NEXT -> DOCOL -> DUP -> EXIT -> back to calling thread
+```
+
+Pointing `IP` directly at the parameter field would bypass `DOCOL`
+entirely and not test what we care about.
 
 ## Files
 
