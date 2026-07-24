@@ -54,6 +54,10 @@ $(TARGET): $(OBJS)
 run: $(TARGET)
 	$(DOCKER_RUN) $(QEMU) ./$(TARGET)
 
+# Run the binary under QEMU with syscall tracing
+strace: $(TARGET)
+	$(DOCKER_RUN) $(QEMU) -strace ./$(TARGET)
+
 # Debug: launch QEMU with GDB stub and connect gdb-multiarch.
 # Uses a pseudo-TTY (-t) so GDB's TUI works correctly.
 debug: $(TARGET)
@@ -65,8 +69,8 @@ debug: $(TARGET)
 	    $(GDB) -q \
 	               -ex "set architecture riscv:rv32" \
 	               -ex "target remote :$(GDB_PORT)" \
-	               -ex "break DOCOL_code" \
-	               -ex "break DUP_code" \
+	               -ex "break NOP_code" \
+	               -ex "break EMIT_code" \
 	               -ex "break EXIT_code" \
 	               -ex "layout split" \
 	               ./$(TARGET)'
@@ -85,3 +89,4 @@ clean:
 # Disassemble the binary (useful for verifying macro expansion)
 disasm: $(TARGET)
 	$(DOCKER_RUN) riscv64-linux-gnu-objdump -d -M no-aliases $(TARGET)
+

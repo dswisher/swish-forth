@@ -30,6 +30,11 @@ rsp_buf:
     .space RSTACK_SIZE
 rsp_top:                        # RSP starts here (top of return stack buffer)
 
+    .balign CELL
+emit_buf:
+    .space 1                    # scratch byte for EMIT/KEY
+
+
 # -- Entry point ---------------------------------------------------------------
 
     .text
@@ -45,7 +50,7 @@ _start:
     la      s2, rsp_top
 
     # -- test harness ----------------------------------------------------------
-    # Test DOCOL by using a pseudo-thread to invoke a "real" thread
+    # Test EMIT by using a pseudo-thread to invoke a "real" thread
 
     la      s0, invoke_thread
     NEXT
@@ -53,15 +58,16 @@ _start:
     .section .rodata
     .balign CELL
 invoke_thread:
-    .word   LIT_cfa             # LIT
-    .word   1234                # Random value to put something on the stack
     .word   test_thread_cfa     # Run the test!
     .word   halt_word_cfa       # Stop the program
 
 
 test_thread_cfa:
     .word   DOCOL_code
-    .word   DUP_cfa
+    .word   LIT_cfa             # LIT
+    .word   33                  # Decimal value for !
+    .word   EMIT_cfa
+    .word   NOP_cfa             # Handy place to set a breakpoint
     .word   EXIT_cfa
 
 
@@ -205,10 +211,32 @@ bz_done:
     NEXT
 
 
+# -- EMIT ----------------------------------------------------------------------
+#
+# EMIT  ( x -- )
+# If x is a graphic character in the implementation-defined character set, display x. 
+
+    defword "EMIT", EMIT, ZBRANCH_header
+    # Pop item off the stack and store 1 byte into the buffer
+    lw      t0, 0(s3)           # TMP = char
+    addi    s3, s3, 4           # pop DSP
+    la      t1, emit_buf        # buffer address
+    sb      t0, 0(t1)           # store low byte to emit_buf
+
+    # Make the call to write a character
+    li      a7, 64              # SYS_write
+    li      a0, 1               # stdout
+    mv      a1, t1              # buffer address in a1 (copied from t1)
+    li      a2, 1               # length, I assume?
+    ecall
+
+    NEXT
+
+
 # -- NOP -----------------------------------------------------------------------
 # TODO - this is a temporary debugging word - remove it once assembly-level debugging is done
 #
-    defword "NOP", NOP, ZBRANCH_header
+    defword "NOP", NOP, EMIT_header
     nop
     NEXT
 
