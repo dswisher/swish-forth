@@ -65,6 +65,9 @@ debug: $(TARGET)
 	    $(GDB) -q \
 	               -ex "set architecture riscv:rv32" \
 	               -ex "target remote :$(GDB_PORT)" \
+	               -ex "break DOCOL_code" \
+	               -ex "break DUP_code" \
+	               -ex "break EXIT_code" \
 	               -ex "layout split" \
 	               ./$(TARGET)'
 

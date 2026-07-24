@@ -1,3 +1,4 @@
+
 define fregs
     printf "IP  (s0) = 0x%08x\n", $s0
     printf "W   (s1) = 0x%08x\n", $s1

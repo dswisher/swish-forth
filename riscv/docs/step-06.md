@@ -17,7 +17,8 @@ on the return stack and set `IP` to the parameter field of the current
 word (i.e., the list of CFAs that make up the definition):
 
 ```
-1. Push IP onto return stack     # *RSP = IP; RSP -= 4
+1. RSP -= 4                      # make room on return stack
+2. Push IP onto return stack     # *RSP = IP
 2. IP = W + 4                    # W points to CFA; W+4 is the first cell
                                  # of the parameter field
 3. NEXT
