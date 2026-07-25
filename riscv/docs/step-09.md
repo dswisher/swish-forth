@@ -34,11 +34,38 @@ A `LATEST` variable holds the address of the most recently defined word.
 | `LATEST` | Address of the most recently defined dictionary entry |
 | `STATE`  | 0 = interpreting, non-zero = compiling |
 
+### Supporting primitives
+
+`CREATE` can be implemented as a colon definition, but it requires several
+primitives that are not yet present. These must be added to `forth.s` first:
+
+| Word    | Stack effect          | Description |
+|---------|-----------------------|-------------|
+| `HERE`  | `( -- a-addr )`       | Push address of the `HERE` variable |
+| `LATEST`| `( -- a-addr )`       | Push address of the `LATEST` variable |
+| `@`     | `( a-addr -- x )`     | Fetch cell from address |
+| `!`     | `( x a-addr -- )`     | Store cell to address |
+| `C@`    | `( c-addr -- char )`  | Fetch byte from address |
+| `C!`    | `( char c-addr -- )`  | Store byte to address |
+| `,`     | `( x -- )`            | Append cell at `HERE`, advance `HERE` by 4 |
+| `C,`    | `( char -- )`         | Append byte at `HERE`, advance `HERE` by 1 |
+| `+`     | `( n1 n2 -- n )`      | Add |
+| `AND`   | `( n1 n2 -- n )`      | Bitwise AND |
+
+With these in place, alignment padding can be computed in Forth directly —
+no separate `ALLOT` primitive is needed at this stage:
+
+```forth
+HERE 3 + -4 AND HERE !
+```
+
+This rounds `HERE` up to the next 4-byte boundary.
+
 ### `,` (COMMA)
 
 `,` appends a cell to the dictionary at `HERE` and advances `HERE` by 4.
-It is the primitive that both `CREATE` and `;` use internally to write into
-the dictionary, and is also useful for Forth-level metacompilation later.
+It is used by `CREATE` and `;` to write into the dictionary, and is also
+useful for Forth-level metacompilation later.
 
 Stack effect: `( n -- )`
 
@@ -46,13 +73,15 @@ Forth-2012 reference: [`,`](https://forth-standard.org/standard/core/Comma)
 
 ### `CREATE`
 
-`CREATE` is the core word that builds a dictionary header:
+`CREATE` is the core word that builds a dictionary header. It should be
+implemented as a **colon definition** (once the primitives above are in
+place) rather than as a raw assembly primitive:
 
 1. Call `PARSE-NAME` to parse the next space-delimited name from the input stream
-2. Write the link field (pointing to the current `LATEST`)
-3. Write the flags+length byte and the name characters
-4. Pad to a 4-byte boundary
-5. Update `LATEST` to point to the new header
+2. Write the link field (pointing to the current `LATEST`) using `LATEST @ ,`
+3. Write the flags+length byte and the name characters using `C,` in a loop
+4. Pad `HERE` to a 4-byte boundary: `HERE 3 + -4 AND HERE !`
+5. Update `LATEST` to point to the new header using `LATEST !`
 6. Leave `HERE` pointing at the CFA slot (the caller writes the CFA next)
 
 `CREATE` does **not** write a CFA or allocate a data field — that is left
@@ -92,13 +121,15 @@ Forth-2012 reference: [`;`](https://forth-standard.org/standard/core/Semi)
 
 ## Implementation notes
 
-`CREATE` depends on `PARSE-NAME` (step 8) being available. The layering is:
+`CREATE` depends on `PARSE-NAME` (step 8) and the supporting primitives listed
+above. The layering is:
 
 ```
 PARSE-NAME  -- parses a token from >IN, returns ( c-addr u ) into the input buffer
-CREATE      -- calls PARSE-NAME, builds the dictionary header
-:           -- calls CREATE, writes DOCOL as CFA, sets STATE=compile
-;           -- compiles EXIT, resets STATE (immediate)
+@, !, C@, C!, +, AND, ,, C,  -- primitives used by CREATE
+CREATE      -- colon definition: calls PARSE-NAME, builds the dictionary header
+:           -- colon definition: calls CREATE, writes DOCOL as CFA, sets STATE=compile
+;           -- colon definition: compiles EXIT, resets STATE (immediate)
 ```
 
 The `IMMEDIATE` flag lives in the flags byte of the header. `:` and `;`
@@ -107,7 +138,8 @@ run during compilation, not be compiled).
 
 ## Files
 
-- `forth.s` — add `,`, `HERE`, `LATEST`, `STATE`, `CREATE`, `:`, `;` (update)
+- `forth.s` — add `HERE`, `LATEST`, `STATE`, `@`, `!`, `C@`, `C!`, `,`, `C,`, `+`, `AND`
+  as primitives; then implement `CREATE`, `:`, `;` as colon definitions (update)
 
 ## Verification
 
