@@ -132,7 +132,7 @@ doc file with design details and implementation notes.
 | 5 | `LIT`, `BRANCH`, `0BRANCH` | [step-05.md](docs/step-05.md) |
 | 6 | `DOCOL` and hand-threaded test | [step-06.md](docs/step-06.md) |
 | 7 | `EMIT` and `KEY` | [step-07.md](docs/step-07.md) |
-| 8 | Input buffer, `>IN`, `WORD` | [step-08.md](docs/step-08.md) |
+| 8 | Input buffer, `>IN`, `PARSE-NAME` | [step-08.md](docs/step-08.md) |
 | 9 | Dictionary structure, `CREATE`, `:`, `;` | [step-09.md](docs/step-09.md) |
 | 10 | Outer interpreter: `FIND`, `NUMBER`, `EXECUTE` | [step-10.md](docs/step-10.md) |
 | 11 | `BLOCK` and `LOAD` (replaces file I/O) | [step-11.md](docs/step-11.md) |

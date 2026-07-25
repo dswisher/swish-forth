@@ -48,7 +48,7 @@ Forth-2012 reference: [`,`](https://forth-standard.org/standard/core/Comma)
 
 `CREATE` is the core word that builds a dictionary header:
 
-1. Call `WORD` to parse the next space-delimited name from the input stream
+1. Call `PARSE-NAME` to parse the next space-delimited name from the input stream
 2. Write the link field (pointing to the current `LATEST`)
 3. Write the flags+length byte and the name characters
 4. Pad to a 4-byte boundary
@@ -92,13 +92,13 @@ Forth-2012 reference: [`;`](https://forth-standard.org/standard/core/Semi)
 
 ## Implementation notes
 
-`CREATE` depends on `WORD` (step 8) being available. The layering is:
+`CREATE` depends on `PARSE-NAME` (step 8) being available. The layering is:
 
 ```
-WORD      -- parses a token from >IN, returns counted string address
-CREATE    -- calls WORD, builds the dictionary header
-:         -- calls CREATE, writes DOCOL as CFA, sets STATE=compile
-;         -- compiles EXIT, resets STATE (immediate)
+PARSE-NAME  -- parses a token from >IN, returns ( c-addr u ) into the input buffer
+CREATE      -- calls PARSE-NAME, builds the dictionary header
+:           -- calls CREATE, writes DOCOL as CFA, sets STATE=compile
+;           -- compiles EXIT, resets STATE (immediate)
 ```
 
 The `IMMEDIATE` flag lives in the flags byte of the header. `:` and `;`
