@@ -304,7 +304,7 @@ refill_copy:
     addi    t2, t2, -1
     bnez    t2, refill_copy
 
-    # Set source_len to 11
+    # Set source_len
     la      t0, source_len_buf
     li      t1, REFILL_TEST_LEN
     sw      t1, 0(t0)
@@ -402,9 +402,9 @@ parse_name_update:
     sw      t5, 0(s3)               # push u (top)
     NEXT
 
-    # -- Empty parse area: return ( in_buf 0 ) ---------------------------------
+    # -- Empty parse area: return ( c-addr 0 ) ---------------------------------
 parse_name_empty:
-    la      t4, in_buf
+    la      t0, in_buf
     li      t5, 0
     j       parse_name_update
 
