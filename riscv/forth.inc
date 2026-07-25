@@ -28,6 +28,9 @@
 .equ DSTACK_SIZE, 0x10000       # 64KB data stack (~16K cells)
 .equ RSTACK_SIZE, 0x10000       # 64KB return stack (~16K cells)
 
+# -- Input buffer size ---------------------------------------------------------
+.equ IN_BUF_SIZE, 0xFF          # 256 byte input buffer
+
 # -- NEXT macro ----------------------------------------------------------------
 #
 # NEXT is the inner interpreter. It is not a Forth word but a macro expanded

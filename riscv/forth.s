@@ -33,6 +33,17 @@ rsp_buf:
     .space RSTACK_SIZE
 rsp_top:                        # RSP starts here (top of return stack buffer)
 
+    .balign CELL
+to_in_buf:
+    .space CELL                 # Offset in characters from the start of the input buffer to the start of the parse area
+
+    .balign CELL
+source_len_buf:
+    .space CELL                 # The number of characters currently in the input buffer
+
+    .balign CELL
+in_buf:
+    .space IN_BUF_SIZE          # The input buffer
 
 # -- Entry point ---------------------------------------------------------------
 
@@ -51,6 +62,7 @@ _start:
     # -- test harness ----------------------------------------------------------
     # Test EMIT by using a pseudo-thread to invoke a "real" thread
 
+_invoke:
     la      s0, invoke_thread
     NEXT
 
@@ -63,12 +75,19 @@ invoke_thread:
 
 test_thread_cfa:
     .word   DOCOL_code
-    .word   LIT_cfa             # LIT
-    .word   33                  # Decimal value for !
-    .word   EMIT_cfa
-    .word   KEY_cfa
-    .word   EMIT_cfa
+
+    .word   REFILL_cfa      # fill the buffer with goodness
+    .word   DROP_cfa        # drop the true flag
+    .word   SOURCE_cfa      # ( -- c-addr u )
+    .word   TYPE_cfa        # ( c-addr u -- )
+
     .word   EXIT_cfa
+
+refill_test_str:
+    .ascii  "HELLO WORLD"
+refill_test_str_end:
+
+.equ REFILL_TEST_LEN, refill_test_str_end - refill_test_str
 
 
 # -- Halt thread ---------------------------------------------------------------
@@ -226,5 +245,91 @@ bz_done:
     call    platform_getc
     addi    s3, s3, -4          # push DSP
     sw      a0, 0(s3)           # *DSP = char
+    NEXT
+
+
+# -- >IN -----------------------------------------------------------------------
+#
+# >IN  ( -- a-addr )
+# a-addr is the address of a cell containing the offset in characters from the
+# start of the input buffer to the start of the parse area.
+
+    defword ">IN", TO_IN, KEY_header
+    addi    s3, s3, -4          # make room on the stack
+    la      t0, to_in_buf       # push the >IN address
+    sw      t0, 0(s3)
+    NEXT
+
+
+# -- SOURCE --------------------------------------------------------------------
+#
+# SOURCE  ( -- c-addr u )
+# c-addr is the address of, and u is the number of characters in, the input
+# buffer.
+
+    defword "SOURCE", SOURCE, TO_IN_header
+    addi    s3, s3, -8              # make room for two cells
+    lw      t0, source_len_buf      # t0 = current length (u)
+    la      t1, in_buf              # t1 = buffer address (c-addr)
+    sw      t0, 0(s3)               # push u (top)
+    sw      t1, 4(s3)               # push c-addr (second)
+    NEXT
+
+
+# -- REFILL --------------------------------------------------------------------
+#
+# REFILL  ( -- flag )
+# Attempt to fill the input buffer from the input source, returning a true
+# flag if successful.
+
+    defword "REFILL", REFILL, SOURCE_header
+
+    # Copy the test string into in_buf
+    la      t0, refill_test_str     # source pointer
+    la      t1, in_buf              # dest pointer
+    li      t2, REFILL_TEST_LEN
+refill_copy:
+    lb      t3, 0(t0)               # load byte from source
+    sb      t3, 0(t1)               # store byte to dest
+    addi    t0, t0, 1
+    addi    t1, t1, 1
+    addi    t2, t2, -1
+    bnez    t2, refill_copy
+
+    # Set source_len to 11
+    la      t0, source_len_buf
+    li      t1, REFILL_TEST_LEN
+    sw      t1, 0(t0)
+
+    # Set >IN to 0
+    la      t0, to_in_buf
+    sw      zero, 0(t0)
+
+    # Push true flag
+    addi    s3, s3, -4
+    li      t0, -1                  # true = all bits set
+    sw      t0, 0(s3)
+
+    NEXT
+
+
+# -- TYPE ----------------------------------------------------------------------
+#
+# TYPE  ( c-addr u -- )
+# If u is greater than zero, display the character string specified by c-addr
+# and u.
+
+    defword "TYPE", TYPE, REFILL_header
+    lw      t3, 0(s3)           # t3 = u (count)
+    lw      t2, 4(s3)           # t2 = c-addr
+    addi    s3, s3, 8           # pop both cells
+type_loop:
+    beqz    t3, type_done
+    lb      a0, 0(t2)           # a0 = char (for platform_putc)
+    addi    t2, t2, 1           # advance pointer
+    addi    t3, t3, -1          # decrement count
+    call    platform_putc       # clobbers t0, t1 only
+    j       type_loop
+type_done:
     NEXT
 

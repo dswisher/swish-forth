@@ -7,6 +7,7 @@
 # Usage:
 #   make                - assemble and link
 #   make run            - run under QEMU (I/O on this terminal)
+#   make debug          - run GDB with QEMU as a subprocess (single window)
 #   make qemu-wait      - run under QEMU, halted, waiting for GDB (window 1)
 #   make gdb-attach     - connect GDB to a waiting QEMU instance  (window 2)
 #   make disasm         - disassemble the binary
@@ -15,7 +16,7 @@
 # Platform selection:
 #   make PLATFORM=qemu-virt   (default)
 #
-# Two-window debug workflow:
+# Two-window debug workflow (alternative to 'make debug'):
 #   Terminal 1: make qemu-wait      <- I/O and program output appear here
 #   Terminal 2: make gdb-attach     <- set breakpoints, then 'continue'
 
@@ -34,12 +35,17 @@ TARGET   := forth.elf
 SRCS     := forth.s platform/$(PLATFORM).s
 OBJS     := $(SRCS:.s=.o)
 
-GDB_PORT    := 1234
 QEMU_FLAGS  := -machine virt -nographic -bios none -kernel $(TARGET)
+
+GDB_PORT    := 1234
+GDB_REMOTE  := -ex "target remote :$(GDB_PORT)"
+GDB_FLAGS   := -ex "set architecture riscv:rv32" \
+               -ex "break EXIT_code" \
+               -ex "layout split"
 
 # ── Phony targets ──────────────────────────────────────────────────────────────
 
-.PHONY: all run qemu-wait gdb-attach disasm clean
+.PHONY: all run qemu-wait gdb-attach debug disasm clean
 
 all: $(TARGET)
 
@@ -62,13 +68,15 @@ qemu-wait: $(TARGET)
 
 # Connect GDB to a waiting QEMU instance (window 2)
 gdb-attach: $(TARGET)
-	$(GDB) -q \
-	    -ex "set architecture riscv:rv32" \
-	    -ex "target remote :$(GDB_PORT)" \
-	    -ex "break NOP_code" \
-	    -ex "break EXIT_code" \
-	    -ex "layout split" \
-	    $(TARGET)
+	$(GDB) -q $(GDB_REMOTE) $(GDB_FLAGS) $(TARGET)
+
+# Run GDB, launching QEMU as a background subprocess (single-window debug workflow)
+# QEMU I/O goes to /dev/null since -nographic conflicts with the GDB pipe approach.
+debug: $(TARGET)
+	$(QEMU) $(QEMU_FLAGS) -s -S &
+	sleep 0.5
+	$(GDB) -q $(GDB_REMOTE) $(GDB_FLAGS) $(TARGET)
+	pkill -f "$(QEMU).*$(TARGET)" 2>/dev/null || true
 
 # Disassemble the binary (useful for verifying macro expansion)
 disasm: $(TARGET)

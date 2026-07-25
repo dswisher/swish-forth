@@ -11,15 +11,15 @@ Display Forth registers: IP, W, RSP, DSP, TMP.
 end
 
 define fdstack
-    set $dsp = $s3
-    set $dsp_top = &dsp_top
+    set $dsp = (unsigned int)$s3
+    set $dsp_top = (unsigned int)&dsp_top
     if $dsp == $dsp_top
         printf "Data stack: empty\n"
     else
         printf "Data stack (top first):\n"
         set $i = 0
         while $dsp < $dsp_top
-            printf "  [%d] 0x%08x (%d)\n", $i, *(int*)$dsp, *(int*)$dsp
+            printf "  [%d] 0x%08x (%d)\n", $i, *(unsigned int*)$dsp, *(int*)$dsp
             set $dsp = $dsp + 4
             set $i = $i + 1
         end
@@ -30,15 +30,15 @@ Display Forth data stack contents, top first.
 end
 
 define frstack
-    set $rsp = $s2
-    set $rsp_top = &rsp_top
+    set $rsp = (unsigned int)$s2
+    set $rsp_top = (unsigned int)&rsp_top
     if $rsp == $rsp_top
         printf "Return stack: empty\n"
     else
         printf "Return stack (top first):\n"
         set $i = 0
         while $rsp < $rsp_top
-            printf "  [%d] 0x%08x\n", $i, *(int*)$rsp
+            printf "  [%d] 0x%08x\n", $i, *(unsigned int*)$rsp
             set $rsp = $rsp + 4
             set $i = $i + 1
         end
