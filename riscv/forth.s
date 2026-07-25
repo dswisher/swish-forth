@@ -78,8 +78,16 @@ test_thread_cfa:
 
     .word   REFILL_cfa      # fill the buffer with goodness
     .word   DROP_cfa        # drop the true flag
-    .word   SOURCE_cfa      # ( -- c-addr u )
-    .word   TYPE_cfa        # ( c-addr u -- )
+
+    .word   PARSE_NAME_cfa  # parse HELLO
+    .word   DROP_cfa        # ...and drop it
+    .word   DROP_cfa
+
+    .word   PARSE_NAME_cfa  # parse WORLD
+    .word   DROP_cfa        # ...and drop it
+    .word   DROP_cfa
+
+    .word   PARSE_NAME_cfa  # try to parse again -> success should be false
 
     .word   EXIT_cfa
 
@@ -332,4 +340,71 @@ type_loop:
     j       type_loop
 type_done:
     NEXT
+
+
+# -- PARSE-NAME ----------------------------------------------------------------
+#
+# PARSE-NAME  ( "<spaces>name<space>" -- c-addr u )
+# Skip leading spaces, then parse a space-delimited token from the input
+# buffer. Returns the address and length of the token within the buffer.
+# Does not copy - c-addr points directly into in_buf.
+
+    defword "PARSE-NAME", PARSE_NAME, TYPE_header
+
+    # Load SOURCE: t0 = c-addr (in_buf), t1 = u (length)
+    la      t0, in_buf
+    lw      t1, source_len_buf
+
+    # Load >IN offset and advance base pointer to parse area start
+    lw      t2, to_in_buf           # t2 = >IN offset
+    add     t0, t0, t2              # t0 = in_buf + >IN  (current position)
+    sub     t1, t1, t2              # t1 = remaining characters
+
+    # -- Phase 1: skip leading spaces ------------------------------------------
+parse_name_skip:
+    beqz    t1, parse_name_empty    # exhausted buffer
+    lb      t3, 0(t0)               # t3 = current char
+    li      t4, ' '
+    bne     t3, t4, parse_name_start # non-space: token starts here
+    addi    t0, t0, 1               # advance pointer
+    addi    t1, t1, -1              # decrement remaining
+    j       parse_name_skip
+
+    # -- Phase 2: record token start, scan for end -----------------------------
+parse_name_start:
+    mv      t4, t0                  # t4 = c-addr (start of token)
+    li      t5, 0                   # t5 = token length
+parse_name_scan:
+    beqz    t1, parse_name_done     # end of buffer: token ends here
+    lb      t3, 0(t0)               # t3 = current char
+    li      t6, ' '
+    beq     t3, t6, parse_name_done # space: token ends here
+    addi    t0, t0, 1               # advance pointer
+    addi    t1, t1, -1              # decrement remaining
+    addi    t5, t5, 1               # increment token length
+    j       parse_name_scan
+
+    # -- Update >IN ------------------------------------------------------------
+parse_name_done:
+    # t0 now points just past the token (or at the trailing space).
+    # Advance one more if we stopped on a space (consume the delimiter).
+    beqz    t1, parse_name_update   # no chars left, don't advance
+    addi    t0, t0, 1               # skip the trailing space
+parse_name_update:
+    la      t3, in_buf
+    sub     t3, t0, t3              # new >IN = current pos - in_buf base
+    la      t6, to_in_buf
+    sw      t3, 0(t6)               # store new >IN
+
+    # -- Push ( c-addr u ) -----------------------------------------------------
+    addi    s3, s3, -8
+    sw      t4, 4(s3)               # push c-addr
+    sw      t5, 0(s3)               # push u (top)
+    NEXT
+
+    # -- Empty parse area: return ( in_buf 0 ) ---------------------------------
+parse_name_empty:
+    la      t4, in_buf
+    li      t5, 0
+    j       parse_name_update
 
