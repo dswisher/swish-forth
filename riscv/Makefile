@@ -65,9 +65,7 @@ gdb-attach: $(TARGET)
 	$(GDB) -q \
 	    -ex "set architecture riscv:rv32" \
 	    -ex "target remote :$(GDB_PORT)" \
-	    -ex "break _start" \
 	    -ex "break NOP_code" \
-	    -ex "break EMIT_code" \
 	    -ex "break EXIT_code" \
 	    -ex "layout split" \
 	    $(TARGET)
@@ -75,6 +73,10 @@ gdb-attach: $(TARGET)
 # Disassemble the binary (useful for verifying macro expansion)
 disasm: $(TARGET)
 	$(OBJDUMP) -d -M no-aliases $(TARGET)
+
+# Make tags
+tags:
+	/opt/homebrew/bin/ctags -R .
 
 # Remove build artifacts
 clean:

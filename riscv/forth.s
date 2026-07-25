@@ -66,7 +66,8 @@ test_thread_cfa:
     .word   LIT_cfa             # LIT
     .word   33                  # Decimal value for !
     .word   EMIT_cfa
-    .word   NOP_cfa             # Handy place to set a breakpoint
+    .word   KEY_cfa
+    .word   EMIT_cfa
     .word   EXIT_cfa
 
 
@@ -200,3 +201,30 @@ bz_true:
     add     s0, s0, t0          # IP = IP + TMP
 bz_done:
     NEXT
+
+
+# -- EMIT ----------------------------------------------------------------------
+#
+# EMIT  ( char -- )
+# Send the character on top of the data stack to the output device.
+# Calls platform_putc, which is provided by files in platform/*.s
+
+    defword "EMIT", EMIT, ZBRANCH_header
+    lw      a0, 0(s3)           # a0 = char
+    addi    s3, s3, 4           # pop DSP
+    call    platform_putc
+    NEXT
+
+
+# -- KEY -----------------------------------------------------------------------
+#
+# KEY  ( -- char )
+# Read one character from the input device and push it onto the data stack.
+# Calls platform_getc, which is provided by files in platform/*.s
+
+    defword "KEY", KEY, EMIT_header
+    call    platform_getc
+    addi    s3, s3, -4          # push DSP
+    sw      a0, 0(s3)           # *DSP = char
+    NEXT
+

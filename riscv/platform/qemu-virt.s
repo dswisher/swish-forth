@@ -3,15 +3,11 @@
 # Provides:
 #   platform_putc  - transmit one character (arg in a0, clobbers t0/t1)
 #   platform_getc  - receive one character (result in a0, clobbers t0/t1)
-#   platform_halt  - terminate cleanly
-#
-# Also defines EMIT and KEY Forth words that call the above routines.
+#   halt_code      - terminate cleanly
 #
 # Hardware:
 #   UART: NS16550A-compatible at 0x10000000
 #   Exit: QEMU sifive_test device at 0x100000 (write 0x5555 = PASS/exit 0)
-
-    .include "forth.inc"
 
 # -- Platform constants --------------------------------------------------------
 
@@ -32,7 +28,7 @@
 # Clobbers: t0, t1
 
     .text
-    .balign CELL
+    .balign 4
     .globl  platform_putc
 platform_putc:
     li      t0, UART_BASE
@@ -50,7 +46,7 @@ platform_putc:
 # Out: a0 = character received
 # Clobbers: t0, t1
 
-    .balign CELL
+    .balign 4
     .globl  platform_getc
 platform_getc:
     li      t0, UART_BASE
@@ -62,48 +58,14 @@ platform_getc:
     ret
 
 
-# -- platform_halt -------------------------------------------------------------
+# -- halt_code -----------------------------------------------------------------
 # Terminate the program cleanly.
 # Writes to QEMU's sifive_test device to signal a "pass" exit.
 
-    .balign CELL
-    .globl  platform_halt
+    .balign 4
     .globl  halt_code
-platform_halt:
 halt_code:
     li      t0, QEMU_EXIT_ADDR
     li      t1, QEMU_EXIT_PASS
     sw      t1, 0(t0)
 1:  j       1b                  # spin; should never reach here
-
-
-# -- EMIT ----------------------------------------------------------------------
-#
-# EMIT  ( char -- )
-# Send the character on top of the data stack to the output device.
-
-    defword "EMIT", EMIT, ZBRANCH_header
-    lw      a0, 0(s3)           # a0 = char (low byte used by platform_putc)
-    addi    s3, s3, 4           # pop DSP
-    call    platform_putc
-    NEXT
-
-
-# -- KEY -----------------------------------------------------------------------
-#
-# KEY  ( -- char )
-# Read one character from the input device and push it onto the data stack.
-
-    defword "KEY", KEY, EMIT_header
-    call    platform_getc
-    addi    s3, s3, -4          # push DSP
-    sw      a0, 0(s3)           # *DSP = char
-    NEXT
-
-
-# -- NOP -----------------------------------------------------------------------
-# Temporary debugging word - remove once assembly-level debugging is done.
-
-    defword "NOP", NOP, KEY_header
-    nop
-    NEXT
