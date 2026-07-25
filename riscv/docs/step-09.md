@@ -1,97 +1,126 @@
-# Step 9: Outer Interpreter
+# Step 9: Dictionary Structure, `CREATE`, `:`, and `;`
 
 ## Goal
 
-Implement a minimal outer interpreter: a REPL that reads a word from
-input, looks it up in the dictionary, and either executes it (interpret
-mode) or compiles it (compile mode). Numbers are parsed and pushed as
-literals. This is the first interactive Forth prompt.
+Define the dictionary header format and implement the words that build new
+dictionary entries. After this step, new Forth words can be defined using
+Forth syntax rather than hand-threaded assembly data.
 
 ## Background
 
-The outer interpreter is the loop that drives everything visible to the
-user. It can itself be written in Forth once enough primitives exist —
-that is the goal here. The assembly pieces needed to support it are:
+### Dictionary Header Format
 
-### Assembly primitives needed
+Each entry in the dictionary has this layout:
 
-| Word | Description |
-|------|-------------|
-| `WORD` | Read the next whitespace-delimited word from input into a buffer; push address and length |
-| `FIND` | Search the dictionary for a word by name; push CFA or 0 |
-| `NUMBER` | Parse a string as a number; push value and success flag |
-| `EXECUTE` | Pop a CFA and execute that word |
-| `INTERPRET` | The outer interpreter loop (can be written in Forth) |
-
-### WORD
-
-`WORD` reads characters from the input stream (using `KEY`), skipping
-leading whitespace, collecting characters until the next whitespace, and
-storing the result in a scratch buffer as a counted string (length byte
-followed by characters).
-
-Stack effect: `( -- addr len )`
-
-### FIND
-
-`FIND` walks the dictionary chain from `LATEST`, comparing names. Returns
-the CFA if found, 0 if not.
-
-Stack effect: `( addr len -- cfa | 0 )`
-
-### NUMBER
-
-`NUMBER` converts a counted string to an integer, respecting the current
-`BASE`. Returns a success flag so the interpreter can report an error on
-unknown words.
-
-Stack effect: `( addr len -- n true | addr len false )`
-
-### EXECUTE
-
-`EXECUTE` pops an address (a CFA) and jumps to the code it points to,
-as if NEXT had dispatched it.
-
-Stack effect: `( cfa -- )`
-
-### INTERPRET (written in Forth)
-
-Once the above primitives exist, `INTERPRET` can be written as a Forth
-word:
-
-```forth
-: INTERPRET
-    BEGIN
-        WORD FIND
-        DUP IF
-            STATE @ IF COMPILE, ELSE EXECUTE THEN
-        ELSE
-            DROP NUMBER
-            STATE @ IF LIT, THEN
-        THEN
-    AGAIN ;
+```
+Offset  Size  Field
+------  ----  -----
+0       4     Link — pointer to the previous entry's header (0 for first)
+4       1     Flags + length — upper bits are flags, lower 5 bits are length
+5       n     Name — ASCII characters, not null-terminated
+5+n     ?     Padding — to align the CFA to a 4-byte boundary
+?       4     CFA — code field address (pointer to code routine)
+?+4     ...   Parameter field — body of the word
 ```
 
-## Forth-2012 Reference
+A `LATEST` variable holds the address of the most recently defined word.
+`FIND` searches the chain by following link fields.
 
-- [`WORD`](https://forth-standard.org/standard/core/WORD)
-- [`FIND`](https://forth-standard.org/standard/core/FIND)
-- [`EXECUTE`](https://forth-standard.org/standard/core/EXECUTE)
-- [`NUMBER`](https://forth-standard.org/standard/core) (internal)
-- [`BASE`](https://forth-standard.org/standard/core/BASE)
+### `HERE`, `LATEST`, `STATE`
+
+| Variable | Description |
+|----------|-------------|
+| `HERE`   | Address of the next free byte in data space |
+| `LATEST` | Address of the most recently defined dictionary entry |
+| `STATE`  | 0 = interpreting, non-zero = compiling |
+
+### `,` (COMMA)
+
+`,` appends a cell to the dictionary at `HERE` and advances `HERE` by 4.
+It is the primitive that both `CREATE` and `;` use internally to write into
+the dictionary, and is also useful for Forth-level metacompilation later.
+
+Stack effect: `( n -- )`
+
+Forth-2012 reference: [`,`](https://forth-standard.org/standard/core/Comma)
+
+### `CREATE`
+
+`CREATE` is the core word that builds a dictionary header:
+
+1. Call `WORD` to parse the next space-delimited name from the input stream
+2. Write the link field (pointing to the current `LATEST`)
+3. Write the flags+length byte and the name characters
+4. Pad to a 4-byte boundary
+5. Update `LATEST` to point to the new header
+6. Leave `HERE` pointing at the CFA slot (the caller writes the CFA next)
+
+`CREATE` does **not** write a CFA or allocate a data field — that is left
+to the caller. `CREATE` is also the foundation for `VARIABLE`, `CONSTANT`,
+and `DOES>`.
+
+Stack effect: `( "<spaces>name" -- )`
+
+Forth-2012 reference: [`CREATE`](https://forth-standard.org/standard/core/CREATE)
+
+### `:` (colon)
+
+`:` defines a new colon definition:
+
+1. Call `CREATE` to build the header
+2. Write `DOCOL` as the CFA (using `,`)
+3. Set `STATE` to compile
+
+`:` is an **immediate** word (executes even during compilation).
+
+Stack effect: `( "<spaces>name" -- )`
+
+Forth-2012 reference: [`:`](https://forth-standard.org/standard/core/Colon)
+
+### `;` (semicolon)
+
+`;` ends a colon definition:
+
+1. Compile `EXIT` into the parameter field (using `,`)
+2. Set `STATE` back to interpret (0)
+
+`;` is also **immediate**.
+
+Stack effect: `( -- )`
+
+Forth-2012 reference: [`;`](https://forth-standard.org/standard/core/Semi)
+
+## Implementation notes
+
+`CREATE` depends on `WORD` (step 8) being available. The layering is:
+
+```
+WORD      -- parses a token from >IN, returns counted string address
+CREATE    -- calls WORD, builds the dictionary header
+:         -- calls CREATE, writes DOCOL as CFA, sets STATE=compile
+;         -- compiles EXIT, resets STATE (immediate)
+```
+
+The `IMMEDIATE` flag lives in the flags byte of the header. `:` and `;`
+must set this flag on their own entries at definition time (since they must
+run during compilation, not be compiled).
 
 ## Files
 
-- `forth.s` — add `WORD`, `FIND`, `NUMBER`, `EXECUTE` (update)
-- `forth.fs` — add `INTERPRET`, `QUIT` in Forth (new)
+- `forth.s` — add `,`, `HERE`, `LATEST`, `STATE`, `CREATE`, `:`, `;` (update)
 
 ## Verification
 
-Run the system and type simple expressions at the prompt:
-- A number followed by Enter — should push silently
-- `.` (dot) — should print the top of stack (implement `.` first)
-- A colon definition — should compile and be callable
+Hand-code a test that:
+
+1. Pre-loads the input buffer with `": DOUBLE DUP + ;"`
+2. Calls `:` (which calls `CREATE` internally)
+3. Observes the dictionary header in GDB — check link, flags+length, name,
+   padding, and that `DOCOL` is the CFA
+4. Simulates compiling `DUP`, `+`, and `EXIT` via `,`
+5. Calls `;`
+6. Executes the new word `DOUBLE` with a known value on the stack
 
 ## Next Step
 
-[Step 10: File I/O and INCLUDE-FILE](step-10.md)
+[Step 10: Outer Interpreter](step-10.md)

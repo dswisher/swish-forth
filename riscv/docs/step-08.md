@@ -1,86 +1,99 @@
-# Step 8: Dictionary Structure, : and ;
+# Step 8: Input Buffer, `>IN`, and `WORD`
 
 ## Goal
 
-Define the dictionary header format and implement `:` and `;`. After this
-step, new Forth words can be defined using Forth syntax rather than
-hand-threaded assembly data.
+Introduce an input buffer and the `>IN` pointer, then implement `WORD` —
+the primitive that parses one space-delimited token from the input stream.
+After this step, the system can extract a name from input; the next step
+uses that to build dictionary entries.
 
 ## Background
 
-### Dictionary Header Format
+### Input buffer
 
-Each entry in the dictionary has this layout:
+The input buffer is a fixed-size region in memory that holds the current
+line of input. Two variables describe it:
 
-```
-Offset  Size  Field
-------  ----  -----
-0       4     Link — pointer to the previous entry's header (0 for first)
-4       1     Flags + length — upper bits are flags, lower 5 bits are length
-5       n     Name — ASCII characters, not null-terminated
-5+n     ?     Padding — to align the CFA to a 4-byte boundary
-?       4     CFA — code field address (pointer to code routine)
-?+4     ...   Parameter field — body of the word
-```
+| Variable | Description |
+|----------|-------------|
+| `SOURCE`  | Address and length of the current input buffer (`( -- addr len )`) |
+| `>IN`     | Offset (in characters) into the current input buffer; the parse position |
 
-A `LATEST` variable holds the address of the most recently defined word.
-`FIND` searches the chain by following link fields.
+For now the buffer is filled one character at a time from `KEY`, building
+up a line until a newline is received. Later (step 11) `REFILL` will be
+replaced by `BLOCK`-based source, but the `>IN` / `SOURCE` interface stays
+the same.
 
-### STATE
+### `>IN`
 
-A variable `STATE` controls whether the system is **interpreting** (0) or
-**compiling** (non-zero). `:` sets it to compile; `;` sets it back to
-interpret.
+`>IN` is a standard variable (`( -- addr )`) whose value is the current
+parse position — the byte offset into the buffer returned by `SOURCE`.
+`WORD` advances `>IN` as it consumes characters.
 
-### : (colon)
+Stack effect: `( -- addr )`
 
-`:` is an **immediate** word (executes even during compilation):
+Forth-2012 reference: [`>IN`](https://forth-standard.org/standard/core/toIN)
 
-1. Read the next word from input (the new word's name)
-2. Create a dictionary header with that name, linked to `LATEST`
-3. Write `DOCOL` as the code field
-4. Update `LATEST` to point to the new header
-5. Set `STATE` to compile
+### `WORD`
 
-### ; (semicolon)
+`WORD` parses the next whitespace-delimited token from the input stream:
 
-`;` is also **immediate**:
+1. Skip leading space delimiters starting at `>IN`
+2. Collect non-space characters into a scratch buffer
+3. Advance `>IN` past the token (and the trailing delimiter, if present)
+4. Store the result as a counted string: one length byte followed by the
+   characters, with a trailing space appended (ANS requirement)
+5. Push the address of the counted string
 
-1. Compile `EXIT` into the parameter field
-2. Set `STATE` back to interpret
+Stack effect: `( char -- addr )`
 
-### COMMA (`,`)
+The `char` argument is the delimiter character; callers pass `BL` (ASCII
+32) for normal whitespace-delimited parsing.
 
-The `,` word appends a cell to the dictionary at `HERE` and advances
-`HERE` by 4. It is the primitive that both `:` and `;` use internally,
-and is also directly useful in Forth-level metacompilation later.
+Forth-2012 reference: [`WORD`](https://forth-standard.org/standard/core/WORD)
 
-Stack effect: `( n -- )`
+### `BL`
 
-## Forth-2012 Reference
+`BL` is a constant that pushes the ASCII code for space (32). It is the
+conventional argument to `WORD` for space-delimited parsing.
 
-- [`:`](https://forth-standard.org/standard/core/Colon)
-- [`;`](https://forth-standard.org/standard/core/Semi)
-- [`,`](https://forth-standard.org/standard/core/Comma)
-- [`HERE`](https://forth-standard.org/standard/core/HERE)
-- [`LATEST`](https://forth-standard.org/standard/core/LATEST) (implementation-defined)
-- [`STATE`](https://forth-standard.org/standard/core/STATE)
+Stack effect: `( -- char )`
+
+Forth-2012 reference: [`BL`](https://forth-standard.org/standard/core/BL)
+
+### Word buffer (`WORD_BUFFER`)
+
+`WORD` writes into a dedicated scratch buffer — not into the dictionary.
+The buffer needs to be large enough for the longest word name; 32 bytes is
+sufficient for a minimal kernel.
+
+## Implementation notes
+
+`WORD` is implemented as an assembly primitive. It uses `>IN` and the
+buffer address/length from `SOURCE` rather than calling `KEY` directly.
+This keeps it decoupled from the I/O layer and makes it reusable when the
+source later switches to block memory.
+
+The `REFILL` word (not implemented here) is responsible for reading a new
+line into the input buffer and resetting `>IN` to zero. For this step,
+testing can be done by pre-populating the input buffer in the hand-threaded
+test harness.
 
 ## Files
 
-- `forth.s` — add `,`, `HERE`, `LATEST`, `STATE`, `:`, `;` (update)
+- `forth.s` — add `BL`, `>IN`, `WORD` (update)
 
 ## Verification
 
-Hand-code a simple test that:
-1. Calls `:` with a name
-2. Compiles a few words using the inner compile loop
-3. Calls `;`
-4. Executes the new word
+Pre-load the input buffer with a known string (e.g., `"  HELLO  WORLD"`)
+in the hand-threaded test, then call `BL WORD`. Inspect the word buffer in
+GDB and confirm:
 
-Inspect the dictionary in memory with GDB to confirm the header structure
-is correct.
+- The length byte is correct (5 for `HELLO`)
+- The characters match
+- `>IN` has advanced to just past `HELLO`
+- A second `BL WORD` call picks up `WORLD`
 
 ## Next Step
 
-[Step 9: Outer Interpreter](step-09.md)
+[Step 9: Dictionary Structure, `CREATE`, `:`, and `;`](step-09.md)

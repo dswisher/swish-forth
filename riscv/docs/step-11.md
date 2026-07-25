@@ -1,64 +1,103 @@
-# Step 11: Core Word Set in Forth
+# Step 11: BLOCK and LOAD
 
 ## Goal
 
-Implement the Forth-2012 core word set as Forth source files loaded from
-disk. From this point forward, all development happens in Neovim with
-real Forth syntax.
+Make Forth source files loadable into the running kernel without filesystem
+syscalls. After this step, the kernel can load and execute Forth source
+written on the host, enabling the escape from assembly — all subsequent
+words are written in Forth.
 
 ## Background
 
-With `INCLUDE-FILE` working, the remaining standard words can be written
-in Forth and loaded at startup. The kernel's `_start` will eventually
-just set up the stacks, load a bootstrap file, and enter the interpreter.
+Because the kernel runs bare-metal (no OS, no filesystem), `INCLUDE-FILE`
+is not available. Instead, Forth source is assembled directly into
+read-only memory as 1 KB blocks following the ANS Forth BLOCK word set.
 
-### Suggested file organisation
+A host-side script (`tools/mkblocks.py`) reads `.fth` source files and
+emits an assembly file (`blocks.s`) with the contents padded to 1024 bytes
+per block. `blocks.s` is assembled and linked alongside `forth.s`; the
+resulting binary contains the source in a read-only region that the Forth
+`BLOCK` word indexes by block number.
+
+On the Raspberry Pi Pico 2 the same block data lives in flash. The kernel
+is identical; only the linker script changes.
+
+## Word definitions
+
+### BLOCK  ( u -- addr )
+
+Return the address of block `u` in the read-only block region. No transfer
+from disk — the data is already in memory.
+
+```forth
+: BLOCK  ( u -- addr )
+    1024 *  block_base + ;
+```
+
+`block_base` is a constant assembled into `blocks.s` pointing to the start
+of the block region.
+
+### LOAD  ( u -- )
+
+Interpret block `u` as Forth source.
+
+```forth
+: LOAD  ( u -- )
+    BLOCK  1024  EVALUATE ;
+```
+
+`EVALUATE` is the standard word that interprets a string as Forth source.
+It is implemented in a later step.
+
+### THRU  ( u1 u2 -- )
+
+Convenience word to load a range of blocks.
+
+```forth
+: THRU  ( u1 u2 -- )
+    1+ SWAP DO  I LOAD  LOOP ;
+```
+
+## `tools/mkblocks.py` script
+
+Takes one or more `.fth` source files and emits an assembly file with the
+block data:
 
 ```
-riscv/
-  forth.s          # assembly kernel
-  forth.fs         # bootstrap: loads the files below in order
-  core/
-    stack.fs       # 2DUP, 2DROP, 2SWAP, 2OVER, NIP, TUCK, ROT, -ROT
-    arithmetic.fs  # ABS, MIN, MAX, MOD, /
-    logic.fs       # AND, OR, XOR, NOT, LSHIFT, RSHIFT
-    comparison.fs  # =, <>, <, >, <=, >=, 0=, 0<, 0>
-    control.fs     # IF/ELSE/THEN, BEGIN/AGAIN, BEGIN/WHILE/REPEAT
-    loops.fs       # DO/LOOP, DO/+LOOP, LEAVE, I, J
-    memory.fs      # CELL+, CELLS, CHAR+, CHARS, ALLOT, FILL, MOVE
-    variables.fs   # VARIABLE, CONSTANT, VALUE, TO
-    strings.fs     # COUNT, TYPE, S", ." 
-    output.fs      # . (dot), .S, U., CR, SPACE, SPACES
-    input.fs       # ACCEPT, REFILL
-    tools.fs       # WORDS, SEE (optional)
+usage: mkblocks.py [-o output.s] source1.fth [source2.fth ...]
 ```
 
-### Words that may still need assembly
+Each 1024-byte block corresponds to one screen of Forth source (the
+traditional Forth block editor unit). Lines are padded or truncated to fit.
 
-A few words are difficult or impossible to implement purely in Forth:
+## ANS Forth BLOCK word set
 
-| Word | Reason |
-|------|--------|
-| `UM*` | 32x32→64 multiply; needs 64-bit result |
-| `UM/MOD` | 64÷32; needs double-length dividend |
-| `FM/MOD` | Floored division variant |
-| `SM/REM` | Symmetric division variant |
-| `THROW`/`CATCH` | Requires saving/restoring the full machine state |
+| Word | Stack | Description |
+|------|-------|-------------|
+| `BLOCK` | `( u -- addr )` | Address of block u |
+| `LOAD` | `( u -- )` | Interpret block u |
+| `THRU` | `( u1 u2 -- )` | Load blocks u1 through u2 |
+| `LIST` | `( u -- )` | Display block u (optional, useful for debugging) |
 
 ## Forth-2012 Reference
 
-- [Core word set](https://forth-standard.org/standard/core)
-- [Core extension word set](https://forth-standard.org/standard/core)
-- [File access word set](https://forth-standard.org/standard/file)
+- [`BLOCK`](https://forth-standard.org/standard/block/BLOCK)
+- [`LOAD`](https://forth-standard.org/standard/block/LOAD)
+- [`THRU`](https://forth-standard.org/standard/block/THRU)
 
 ## Files
 
-- `forth.fs` — top-level bootstrap, loads core/ files (update)
-- `core/*.fs` — standard word set implemented in Forth (new)
+- `tools/mkblocks.py` — host-side script to generate `blocks.s` (new)
+- `blocks.s` — generated assembly containing block data (generated, not checked in)
+- `forth.s` / `forth.fs` — add `BLOCK`, `LOAD`, `THRU` (update)
+- `Makefile` — add rule to run `mkblocks.py` and assemble `blocks.s` (update)
 
 ## Verification
 
-A growing test suite of Forth words exercised interactively and
-eventually via loaded test files. The [forth-foundation-test
-suite](https://github.com/gerryjackson/forth2012-test-suite) provides
-a standard test harness for Forth-2012 compliance.
+Create a small test file `test.fth` containing a colon definition. Generate
+`blocks.s` with `mkblocks.py`, build, run, and `LOAD` block 0. Confirm the
+defined word executes correctly.
+
+## Next Step
+
+[Step 12: Core Word Set in Forth](step-12.md)

@@ -1,103 +1,121 @@
-# Step 10: BLOCK and LOAD
+# Step 10: Outer Interpreter
 
 ## Goal
 
-Make Forth source files loadable into the running kernel without filesystem
-syscalls. After this step, the kernel can load and execute Forth source
-written on the host, enabling the escape from assembly — all subsequent
-words are written in Forth.
+Implement a minimal outer interpreter: a REPL that reads a word from
+input, looks it up in the dictionary, and either executes it (interpret
+mode) or compiles it (compile mode). Numbers are parsed and pushed as
+literals. This is the first interactive Forth prompt.
 
 ## Background
 
-Because the kernel runs bare-metal (no OS, no filesystem), `INCLUDE-FILE`
-is not available. Instead, Forth source is assembled directly into
-read-only memory as 1 KB blocks following the ANS Forth BLOCK word set.
+The outer interpreter is the loop that drives everything visible to the
+user. It can itself be written in Forth once enough primitives exist —
+that is the goal here. `WORD` already exists from step 8; the remaining
+assembly pieces are:
 
-A host-side script (`tools/mkblocks.py`) reads `.fth` source files and
-emits an assembly file (`blocks.s`) with the contents padded to 1024 bytes
-per block. `blocks.s` is assembled and linked alongside `forth.s`; the
-resulting binary contains the source in a read-only region that the Forth
-`BLOCK` word indexes by block number.
+### Assembly primitives needed
 
-On the Raspberry Pi Pico 2 the same block data lives in flash. The kernel
-is identical; only the linker script changes.
+| Word | Description |
+|------|-------------|
+| `FIND` | Search the dictionary for a word by name; return CFA and flags, or 0 |
+| `NUMBER` | Parse a string as a number; push value and success flag |
+| `EXECUTE` | Pop a CFA and execute that word |
+| `REFILL` | Read a line from input into the input buffer, reset `>IN` |
 
-## Word definitions
+### `FIND`
 
-### BLOCK  ( u -- addr )
+`FIND` walks the dictionary chain from `LATEST`, comparing the counted
+string against each entry's name field. Returns the CFA and a found/not-found
+flag if found, or the original string and 0 if not found.
 
-Return the address of block `u` in the read-only block region. No transfer
-from disk — the data is already in memory.
+Stack effect: `( addr -- cfa 1 | cfa -1 | addr 0 )`
+
+The sign of the flag distinguishes immediate words (1) from normal words
+(-1), matching the Forth-2012 definition.
+
+Forth-2012 reference: [`FIND`](https://forth-standard.org/standard/core/FIND)
+
+### `NUMBER`
+
+`NUMBER` converts a counted string to an integer, respecting the current
+`BASE`. Returns a success flag so the interpreter can report an error on
+unknown words.
+
+Stack effect: `( addr len -- n true | addr len false )`
+
+### `EXECUTE`
+
+`EXECUTE` pops an address (a CFA) and jumps to the code it points to,
+as if `NEXT` had dispatched it.
+
+Stack effect: `( cfa -- )`
+
+Forth-2012 reference: [`EXECUTE`](https://forth-standard.org/standard/core/EXECUTE)
+
+### `REFILL`
+
+`REFILL` reads one line from the input source (via `KEY`), stores it in
+the input buffer, sets `SOURCE` to reflect the new contents, and resets
+`>IN` to 0. Returns a flag: true if input was available, false at end of
+input.
+
+Stack effect: `( -- flag )`
+
+Forth-2012 reference: [`REFILL`](https://forth-standard.org/standard/core/REFILL)
+
+### `INTERPRET` (written in Forth)
+
+Once the above primitives exist, `INTERPRET` can be written as a Forth
+word:
 
 ```forth
-: BLOCK  ( u -- addr )
-    1024 *  block_base + ;
+: INTERPRET
+    BEGIN
+        BL WORD DUP C@ WHILE
+        FIND
+        DUP IF
+            STATE @ 0= OVER 0< OR IF
+                EXECUTE
+            ELSE
+                ,
+            THEN
+            DROP
+        ELSE
+            DROP NUMBER DROP
+            STATE @ IF
+                LIT , ,
+            THEN
+        THEN
+    REPEAT
+    DROP ;
 ```
 
-`block_base` is a constant assembled into `blocks.s` pointing to the start
-of the block region.
+### `QUIT` (written in Forth)
 
-### LOAD  ( u -- )
-
-Interpret block `u` as Forth source.
+`QUIT` is the top-level loop: it calls `REFILL` and `INTERPRET` forever.
 
 ```forth
-: LOAD  ( u -- )
-    BLOCK  1024  EVALUATE ;
+: QUIT
+    BEGIN
+        REFILL DROP
+        INTERPRET
+    AGAIN ;
 ```
-
-`EVALUATE` is the standard word that interprets a string as Forth source.
-It is implemented in a later step.
-
-### THRU  ( u1 u2 -- )
-
-Convenience word to load a range of blocks.
-
-```forth
-: THRU  ( u1 u2 -- )
-    1+ SWAP DO  I LOAD  LOOP ;
-```
-
-## `tools/mkblocks.py` script
-
-Takes one or more `.fth` source files and emits an assembly file with the
-block data:
-
-```
-usage: mkblocks.py [-o output.s] source1.fth [source2.fth ...]
-```
-
-Each 1024-byte block corresponds to one screen of Forth source (the
-traditional Forth block editor unit). Lines are padded or truncated to fit.
-
-## ANS Forth BLOCK word set
-
-| Word | Stack | Description |
-|------|-------|-------------|
-| `BLOCK` | `( u -- addr )` | Address of block u |
-| `LOAD` | `( u -- )` | Interpret block u |
-| `THRU` | `( u1 u2 -- )` | Load blocks u1 through u2 |
-| `LIST` | `( u -- )` | Display block u (optional, useful for debugging) |
-
-## Forth-2012 Reference
-
-- [`BLOCK`](https://forth-standard.org/standard/block/BLOCK)
-- [`LOAD`](https://forth-standard.org/standard/block/LOAD)
-- [`THRU`](https://forth-standard.org/standard/block/THRU)
 
 ## Files
 
-- `tools/mkblocks.py` — host-side script to generate `blocks.s` (new)
-- `blocks.s` — generated assembly containing block data (generated, not checked in)
-- `forth.s` / `forth.fs` — add `BLOCK`, `LOAD`, `THRU` (update)
-- `Makefile` — add rule to run `mkblocks.py` and assemble `blocks.s` (update)
+- `forth.s` — add `FIND`, `NUMBER`, `EXECUTE`, `REFILL` (update)
+- `forth.fs` — add `INTERPRET`, `QUIT` in Forth (new)
 
 ## Verification
 
-Create a small test file `test.fth` containing a colon definition. Generate
-`blocks.s` with `mkblocks.py`, build, run, and `LOAD` block 0. Confirm the
-defined word executes correctly.
+Run the system and type simple expressions at the prompt:
+
+- A number followed by Enter — should push silently
+- `.` (dot) — should print the top of stack (implement `.` first in `forth.fs`)
+- A colon definition — should compile and be callable
 
 ## Next Step
 
-[Step 11: Core Word Set in Forth](step-11.md)
+[Step 11: BLOCK and LOAD](step-11.md)
