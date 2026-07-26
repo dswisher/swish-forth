@@ -45,6 +45,10 @@ source_len_buf:
 in_buf:
     .space IN_BUF_SIZE          # The input buffer
 
+    .balign CELL
+state_buf:
+    .space CELL                 # The complation state: 0 = interpreting, non-zero = compiling
+
 
 # -- DATA layout ---------------------------------------------------------------
 
@@ -87,12 +91,8 @@ invoke_thread:
 test_thread_cfa:
     .word   DOCOL_code
 
-    .word   HERE_cfa            # Put a few things on the stack for handy reference
-    .word   FETCH_cfa
-    .word   LATEST_cfa
-    .word   FETCH_cfa
     .word   LIT_cfa
-    .word   0xabcd
+    .word   0x0000abcd
 
     .word   LIT_cfa
     .word   0x12341234
@@ -100,12 +100,16 @@ test_thread_cfa:
 
     .word   REFILL_cfa          # Fill the input buffer
 
-    .word   CREATE_cfa          # word under test
+    .word   COLON_cfa
+
+    # TODO - add DUP and + to definition
+
+    .word   SEMI_cfa
 
     .word   EXIT_cfa
 
 refill_test_str:
-    .ascii  "HELLO WORLD"
+    .ascii  "DOUBLE"
 refill_test_str_end:
 
 .equ REFILL_TEST_LEN, refill_test_str_end - refill_test_str
@@ -446,12 +450,24 @@ parse_name_empty:
     NEXT
 
 
+# -- STATE ---------------------------------------------------------------------
+#
+# STATE  ( -- addr )
+# addr is the STATE pointer.
+
+    defword "STATE", STATE, LATEST_header
+    addi    s3, s3, -4          # make room on the stack
+    la      t0, state_buf       # push the STATE address
+    sw      t0, 0(s3)
+    NEXT
+
+
 # -- STORE ---------------------------------------------------------------------
 #
 # !  ( x a-addr -- )
 # Store x at a-addr.
 
-    defword "!", STORE, LATEST_header
+    defword "!", STORE, STATE_header
     lw      t0, 0(s3)           # TMP1 = a-addr
     addi    s3, s3, 4           # pop
     lw      t1, 0(s3)           # TMP2 = x
@@ -684,6 +700,47 @@ defword "0=", ZERO_EQ, RTO_header
     .word   EXIT_cfa
 
 
+# -- : -------------------------------------------------------------------------
+#
+# :  ( "<spaces>name" -- )
+# Skip leading space delimiters. Parse name delimited by a space. Create a
+# definition for name, called a "colon definition". Enter compilation state
+# and start the current definition, producing colon-sys.
+
+    defcolon ":", COLON, CREATE_header
+    .word   CREATE_cfa          # CREATE
+    .word   LIT_cfa
+    .word   DOCOL_code          # address of DOCOL
+    .word   COMMA_cfa           # ,                         \ save DOCOL as CFA
+
+    .word   LIT_cfa
+    .word   -1
+    .word   STATE_cfa
+    .word   STORE_cfa           # -1 STATE !                \ set STATE to compiling
+
+    .word   EXIT_cfa
+
+
+# -- ; -------------------------------------------------------------------------
+#
+# ;  ( "<spaces>name" -- )
+# Skip leading space delimiters. Parse name delimited by a space. Create a
+# definition for name, called a "colon definition". Enter compilation state
+# and start the current definition, producing colon-sys.
+
+    defcolon ";", SEMI, COLON_header
+    .word   LIT_cfa
+    .word   EXIT_cfa            # addres of EXIT CFA
+    .word   COMMA_cfa           # ,
+
+    .word   LIT_cfa
+    .word   0
+    .word   STATE_cfa
+    .word   STORE_cfa           # 0 STATE !                 \ set STATE to interpreting
+
+    .word   EXIT_cfa
+
+
 # -- latest_buf ----------------------------------------------------------------
 # A pointer to the last dictionary entry.
 # NOTE - add new dictionary entries ABOVE this
@@ -691,5 +748,5 @@ defword "0=", ZERO_EQ, RTO_header
     .section .data
     .balign CELL
 latest_buf:                     # points to the last defword in the chain
-    .word   CREATE_header
+    .word   SEMI_header
 

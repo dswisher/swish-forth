@@ -191,7 +191,7 @@ run during compilation, not be compiled).
 
 Hand-code a test that:
 
-1. Pre-loads the input buffer with `": DOUBLE DUP + ;"`
+1. Pre-loads the input buffer with `"DOUBLE DUP + ;"` (all that is really needed is `DOUBLE`)
 2. Calls `:` (which calls `CREATE` internally)
 3. Observes the dictionary header in GDB — check link, flags+length, name,
    padding, and that `DOCOL` is the CFA
