@@ -91,28 +91,11 @@ invoke_thread:
 test_thread_cfa:
     .word   DOCOL_code
 
-    # Test: EXECUTE DUP on value 42 -> stack: [42][42]
-    .word   LIT_cfa
-    .word   42
-    .word   LIT_cfa
-    .word   DUP_cfa
-    .word   EXECUTE_cfa
-
-    # Test: EXECUTE DROP -> stack: [42]
-    .word   LIT_cfa
-    .word   DROP_cfa
-    .word   EXECUTE_cfa
-
-    # Test: EXECUTE DUP again -> stack: [42][42]
-    .word   LIT_cfa
-    .word   DUP_cfa
-    .word   EXECUTE_cfa
-
-    # Test: EXECUTE + (adds top two) -> requires two values
-    # DUP already gave us [42][42], + should give [84]
-    .word   LIT_cfa
-    .word   PLUS_cfa
-    .word   EXECUTE_cfa
+    .word   REFILL_cfa          # reads one line from KEY into input buffer
+    .word   WORD_cfa            # parse first token, copy counted string to HERE
+    .word   DUP_cfa             # dup c-addr of counted string
+    .word   CFETCH_cfa          # fetch length byte
+    .word   SWAP_cfa            # ( length c-addr )  verify with GDB
 
     .word   EXIT_cfa
 
@@ -319,24 +302,28 @@ bz_done:
 
     defword "REFILL", REFILL, SOURCE_header
 
-    # Copy the test string into in_buf
-    la      t0, refill_test_str     # source pointer
-    la      t1, in_buf              # dest pointer
-    li      t2, REFILL_TEST_LEN
-refill_copy:
-    lb      t3, 0(t0)               # load byte from source
-    sb      t3, 0(t1)               # store byte to dest
-    addi    t0, t0, 1
-    addi    t1, t1, 1
-    addi    t2, t2, -1
-    bnez    t2, refill_copy
+    la      a1, in_buf              # a1 = dest pointer (base)
+    li      a2, 0                   # a2 = count
+    li      a3, IN_BUF_SIZE         # a3 = max chars
 
-    # Set source_len
+refill_read:
+    beq     a2, a3, refill_done     # buffer full, stop
+    call    platform_getc           # a0 = KEY (blocking read)
+    li      a4, 10                  # newline '\n'
+    beq     a0, a4, refill_done
+    li      a4, 13                  # carriage return '\r'
+    beq     a0, a4, refill_read     # skip CR, keep reading
+    add     a4, a1, a2              # dest + offset
+    sb      a0, 0(a4)               # store char in buffer
+    addi    a2, a2, 1               # count++
+    j       refill_read
+
+refill_done:
+    # Store count in source_len_buf
     la      t0, source_len_buf
-    li      t1, REFILL_TEST_LEN
-    sw      t1, 0(t0)
+    sw      a2, 0(t0)
 
-    # Set >IN to 0
+    # Reset >IN to 0
     la      t0, to_in_buf
     sw      zero, 0(t0)
 
@@ -899,6 +886,64 @@ number_fail:
     jr      t0                  # jump to the word's code
 
 
+# -- BL ------------------------------------------------------------------------
+#
+# BL  ( -- char )
+# char is the character value for a space.
+
+    defcolon "BL", BL, EXECUTE_header
+    .word   LIT_cfa
+    .word   32
+    .word   EXIT_cfa
+
+
+# -- WORD ----------------------------------------------------------------------
+#
+# WORD  ( -- c-addr )
+# Parse a space-delimited token and copy it to HERE as a counted string
+# suitable for FIND. Returns the address of the counted string.
+
+    defcolon "WORD", WORD, BL_header
+    .word   PARSE_NAME_cfa      # PARSE-NAME              ( c-addr u )
+    .word   HERE_cfa
+    .word   FETCH_cfa
+    .word   RTO_cfa             # HERE @ >R               ( c-addr u )        \ save hdr on return stack
+
+    .word   DUP_cfa
+    .word   CCOMMA_cfa          # DUP C,                  ( c-addr u )        \ write length byte
+
+    # \ copy loop — ( c-addr u )
+    # <loop-top>:
+    .word   DUP_cfa
+    .word   ZERO_EQ_cfa
+    .word   ZERO_BRANCH_cfa     # DUP 0= 0BRANCH <loop-body>
+    .word   12
+
+    .word   BRANCH_cfa          # BRANCH <loop-done>
+    .word   56
+
+    # <loop-body>:
+    .word   OVER_cfa
+    .word   CFETCH_cfa          #   OVER C@               ( c-addr u char )   \ fetch next char
+    .word   CCOMMA_cfa          #   C,                    ( c-addr u )        \ append to HERE
+    .word   SWAP_cfa
+    .word   LIT_cfa
+    .word   1
+    .word   PLUS_cfa
+    .word   SWAP_cfa            #   SWAP LIT 1 + SWAP     ( c-addr+1 u )      \ advance pointer
+    .word   LIT_cfa
+    .word   1
+    .word   MINUS_cfa           #   LIT 1 -               ( c-addr+1 u-1 )    \ decrement count
+    .word   BRANCH_cfa          #   BRANCH <loop-top>
+    .word   -72
+
+    # <loop-done>:
+    .word   DROP_cfa
+    .word   DROP_cfa            #   DROP DROP             ( )                 \ drop count and pointer
+    .word   RFROM_cfa           #   R>                    ( hdr )             \ retrieve saved header address
+    .word   EXIT_cfa
+
+
 # -- latest_buf ----------------------------------------------------------------
 # A pointer to the last dictionary entry.
 # NOTE - add new dictionary entries ABOVE this
@@ -906,5 +951,5 @@ number_fail:
     .section .data
     .balign CELL
 latest_buf:                     # points to the last defword in the chain
-    .word   EXECUTE_header
+    .word   WORD_header
 
