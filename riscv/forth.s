@@ -91,26 +91,44 @@ invoke_thread:
 test_thread_cfa:
     .word   DOCOL_code
 
-    # Test 1: FIND "DUP" — should return (cfa -1)
+    # Test 1: NUMBER "123", 3 -> should return (123, true)
     .word   LIT_cfa
-    .word   find_test_dup
-    .word   FIND_cfa
+    .word   number_test_123
+    .word   LIT_cfa
+    .word   3
+    .word   NUMBER_cfa
 
-    # Test 2: FIND "BOGUS" — should return (addr 0)
+    # Test 2: NUMBER "12A3", 4 -> should return (addr, len, false)
     .word   LIT_cfa
-    .word   find_test_bogus
-    .word   FIND_cfa
+    .word   number_test_bad
+    .word   LIT_cfa
+    .word   4
+    .word   NUMBER_cfa
 
-    # Test 3: FIND ";" — immediate word, should return (cfa 1)
+    # Test 3: NUMBER "", 0 -> should return (addr, 0, false)
     .word   LIT_cfa
-    .word   find_test_semi
-    .word   FIND_cfa
+    .word   number_test_empty
+    .word   LIT_cfa
+    .word   0
+    .word   NUMBER_cfa
 
     .word   EXIT_cfa
 
-    # -- Counted strings for FIND tests ---------------------------------------
+    # -- Test strings for NUMBER tests ---------------------------------------
     .section .rodata
     .balign CELL
+number_test_123:
+    .ascii  "123"
+    .balign CELL
+
+number_test_bad:
+    .ascii  "12A3"
+    .balign CELL
+
+number_test_empty:
+    .ascii  ""                  # empty, but .balign pads the alignment
+    .balign CELL
+
 find_test_dup:
     .byte   3                   # length
     .ascii  "DUP"               # name
@@ -842,6 +860,57 @@ find_notfound:
     NEXT
 
 
+# -- NUMBER ---------------------------------------------------------------------
+#
+# NUMBER  ( addr len -- n true | addr len false )
+# Convert a string to an integer. Handles decimal digits only at this stage.
+# Returns true (-1) and the parsed number on success, or leaves addr and len
+# on the stack with a false (0) flag if any character is not a digit.
+#
+# Empty string (len == 0) is not a valid number.
+
+    defword "NUMBER", NUMBER, FIND_header
+
+    lw      t0, 0(s3)           # t0 = len (top of stack)
+    lw      t1, 4(s3)           # t1 = addr (second)
+
+    # Check for empty string
+    beqz    t0, number_fail
+
+    mv      t2, t1              # t2 = scanning pointer
+    mv      t3, t0              # t3 = remaining count
+    li      t4, 0               # t4 = accumulator (n)
+
+number_scan:
+    beqz    t3, number_success  # all chars processed
+    lbu     t5, 0(t2)           # t5 = character
+    addi    t5, t5, -48         # t5 = char - '0'
+    bltz    t5, number_fail     # char < '0'
+    li      t6, 9
+    bgt     t5, t6, number_fail # char > '9'
+
+    # n = n * 10 + digit  (using shifts: n*10 = n*8 + n*2)
+    slli    a1, t4, 3           # a1 = n * 8
+    slli    a2, t4, 1           # a2 = n * 2
+    add     t6, a1, a2          # t6 = n * 10
+    add     t4, t6, t5          # t4 = n * 10 + digit
+
+    addi    t2, t2, 1           # advance pointer
+    addi    t3, t3, -1          # decrement count
+    j       number_scan
+
+number_success:
+    sw      t4, 4(s3)           # replace addr with n
+    li      t0, -1              # Forth true
+    sw      t0, 0(s3)           # replace len with true
+    NEXT
+
+number_fail:
+    addi    s3, s3, -4          # push false on top, leaving addr and len
+    sw      zero, 0(s3)
+    NEXT
+
+
 # -- latest_buf ----------------------------------------------------------------
 # A pointer to the last dictionary entry.
 # NOTE - add new dictionary entries ABOVE this
@@ -849,5 +918,5 @@ find_notfound:
     .section .data
     .balign CELL
 latest_buf:                     # points to the last defword in the chain
-    .word   FIND_header
+    .word   NUMBER_header
 

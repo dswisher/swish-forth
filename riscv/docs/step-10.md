@@ -58,33 +58,19 @@ Forth-2012 reference: [`EXECUTE`](https://forth-standard.org/standard/core/EXECU
 `REFILL` reads one line from the input source (via `KEY`), stores it in
 the input buffer, sets `SOURCE` to reflect the new contents, and resets
 `>IN` to 0. Returns a flag: true if input was available, false at end of
-input.
+input. The current test-harness version copies a fixed string; this must
+be rewritten to use `KEY` for interactive input.
 
 Stack effect: `( -- flag )`
 
 Forth-2012 reference: [`REFILL`](https://forth-standard.org/standard/core/REFILL)
 
-### Forth supporting words (written in Forth)
+### Forth supporting words (hand-threaded colon definitions)
 
-Before `INTERPRET` can be compiled, several control-flow and utility
-words must be implemented in `forth.fs`. These are all compile-time words
-that manipulate `HERE` and emit `BRANCH`/`0BRANCH` with computed offsets.
-They can be written in Forth using only primitives already available.
-
-#### `'` (tick)
-
-`'` parses the next token and pushes its CFA. It is immediate — it
-executes even in compile mode so that its result can be used by compiling
-words like `IF`.
-
-Stack effect: `( "<spaces>name" -- cfa )`
-
-```forth
-: '  PARSE-NAME FIND DUP 0= ABORT" ?" ;
-```
-
-`ABORT"` isn't available yet, so initially `?` can be omitted and an
-unknown word will push 0 (detected by `IF` / `INTERPRET`).
+Three trivial helper words are needed. Since `BLOCK` is not available
+until step 11, these are written as hand-threaded `defcolon` entries in
+`forth.s` (not loaded from `forth.fs`). In step 11 they will be moved
+into `forth.fs` and loaded via `BLOCK`.
 
 #### `BL`
 
@@ -94,66 +80,41 @@ Push the ASCII code for space (32 = $20).
 : BL  LIT 32 ;
 ```
 
-#### `WORD` via `PARSE-NAME`
+#### `WORD`
 
-`WORD` parses a space-delimited token and returns it as a counted string
-at `HERE`. At this stage a simpler wrapper around `PARSE-NAME` can suffice
-if `FIND`/`NUMBER` accept `( c-addr u )` format directly.
-
-#### Control-flow words
-
-Each control-flow word computes an offset (in bytes) between a saved
-position on the data stack and the current `HERE`, then compiles (or
-backpatches) a `BRANCH` or `0BRANCH` instruction.
-
-| Word | Stack (compile time) | Action |
-|------|---------------------|--------|
-| `BEGIN` | `( -- dest )` | Save `HERE` as loop entry point |
-| `AGAIN` | `( dest -- )` | Compile `BRANCH` back to `dest` |
-| `UNTIL` | `( dest -- )` | Compile `0BRANCH` back to `dest` |
-| `IF` | `( -- orig )` | Compile `0BRANCH` placeholder, save address for backpatching |
-| `THEN` | `( orig -- )` | Resolve `orig` to current `HERE` |
-| `ELSE` | `( orig1 -- orig2 )` | Compile `BRANCH` placeholder, resolve `orig1` |
-| `WHILE` | `( dest -- dest orig )` | Compile `0BRANCH` placeholder |
-| `REPEAT` | `( dest orig -- )` | Compile `BRANCH` back to `dest`, resolve `orig` |
-
-Implementations reference the CFA labels `BRANCH_cfa` and
-`ZERO_BRANCH_cfa` via `'`:
+Wraps `PARSE-NAME` and produces a counted string at `HERE`
+suitable for `FIND`:
 
 ```forth
-: BEGIN   HERE @ ;
-: AGAIN   ' BRANCH ,  HERE @  SWAP - , ;
-: UNTIL   ' 0BRANCH ,  HERE @  SWAP - , ;
-: IF      ' 0BRANCH ,  HERE @  LIT 0 , ;
-: THEN    HERE @  OVER -  SWAP ! ;
-: ELSE    ' BRANCH ,  HERE @  LIT 0 ,  SWAP  HERE @  SWAP -  SWAP ! ;
-: WHILE   ' 0BRANCH ,  HERE @  LIT 0 ,  SWAP ;
-: REPEAT  ' BRANCH ,  HERE @  OVER - ,  HERE @  SWAP -  SWAP ! ;
+: WORD  PARSE-NAME DUP C,                                \ write length byte
+        HERE OVER 1 + SWAP CMOVE  HERE 1 + SWAP 1 + ALLOT ;
 ```
 
-> **Note:** `' 0BRANCH` requires `0BRANCH` to be a Forth-visible name.
-> The assembly primitive is `defword "0BRANCH", ZERO_BRANCH, ...`, so the
-> name in the header is `0BRANCH` (not `ZERO_BRANCH`). `FIND` searches by
-> that header name, so `' 0BRANCH` works correctly.
+> **Note:** `CMOVE` and `ALLOT` are not primitives yet. At this stage a
+> simplified `WORD` is acceptable if `FIND`/`NUMBER` accept
+> `( c-addr u )` directly (as `PARSE-NAME` and `NUMBER` already do).
 
-#### Ordering in `forth.fs`
+#### `.` (DOT)
 
-These words depend on `FIND` (for `'`), so the layering is:
+Pop and display the top of stack as a number.
 
-```
-forth.s primitives:  FIND, NUMBER, EXECUTE, REFILL
-forth.fs:            BL, ', IF, THEN, ELSE, BEGIN, AGAIN, UNTIL, ...
-                     WHILE, REPEAT
-                     WORD
-                     . (DOT)        -- display top of stack
-                     INTERPRET
-                     QUIT
+```forth
+: .  ( n -- )  <# #S #> TYPE SPACE ;
 ```
 
-### `INTERPRET` (written in Forth)
+> Pending `<#`, `#S`, `#>`, a temporary assembly primitive
+> `defword ".", DOT, ...` that calls a simple integer-print
+> routine will suffice.
 
-Once the above primitives exist, `INTERPRET` can be written as a Forth
-word:
+### `INTERPRET` (hand-threaded colon definition)
+
+`INTERPRET` is the core of the REPL. It must be hand-coded as a
+`defcolon` entry with manually-computed branch offsets, since
+control-flow words (`IF`, `BEGIN`, `REPEAT`, etc.) are not yet
+implemented. (They will be added in step 11, written in Forth in
+`forth.fs` and loaded via `BLOCK`.)
+
+The pseudocode for reference:
 
 ```forth
 : INTERPRET
@@ -177,9 +138,9 @@ word:
     DROP ;
 ```
 
-### `QUIT` (written in Forth)
+### `QUIT` (hand-threaded colon definition)
 
-`QUIT` is the top-level loop: it calls `REFILL` and `INTERPRET` forever.
+`QUIT` is the top-level infinite loop. Also hand-coded as a `defcolon`:
 
 ```forth
 : QUIT
@@ -189,17 +150,26 @@ word:
     AGAIN ;
 ```
 
+### Layering in `forth.s`
+
+```
+forth.s primitives:  FIND, NUMBER, EXECUTE, REFILL (rewritten)
+forth.s defcolon:    BL, WORD, . (DOT)
+                     INTERPRET, QUIT
+```
+
 ## Files
 
-- `forth.s` — add `FIND`, `NUMBER`, `EXECUTE`, `REFILL` (update)
-- `forth.fs` — add `BL`, `'`, `IF`, `THEN`, `ELSE`, `BEGIN`, `AGAIN`, `UNTIL`, `WHILE`, `REPEAT`, `WORD`, `.` (DOT), `INTERPRET`, `QUIT` in Forth (new)
+- `forth.s` — add `FIND`, `NUMBER`, `EXECUTE` as primitives; rewrite `REFILL`;
+  add `BL`, `WORD`, `.` (DOT), `INTERPRET`, `QUIT` as `defcolon` entries
+- `forth.fs` — not used yet (will be loaded via `BLOCK` in step 11)
 
 ## Verification
 
 Run the system and type simple expressions at the prompt:
 
 - A number followed by Enter — should push silently
-- `.` (dot) — should print the top of stack (implement `.` first in `forth.fs`)
+- `.` (dot) — should print the top of stack (implement `.` as a `defcolon`)
 - A colon definition — should compile and be callable
 
 ## Next Step
