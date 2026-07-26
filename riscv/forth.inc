@@ -131,3 +131,22 @@
     .word   DOCOL_code
 .endm
 
+
+# -- defcolon_immed macro ------------------------------------------------------
+# Just like defcolon, but marks the word as immediate.
+
+.macro defcolon_immed name, label, link
+    .section .rodata
+    .balign CELL
+    .globl  \label\()_header
+    .globl  \label\()_cfa
+\label\()_header:
+    .word   \link
+    .byte   (.Lcn_end_\label - .Lcn_start_\label) | 0x40
+.Lcn_start_\label:
+    .ascii  "\name"
+.Lcn_end_\label:
+    .balign CELL
+\label\()_cfa:
+    .word   DOCOL_code
+.endm

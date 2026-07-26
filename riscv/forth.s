@@ -707,7 +707,7 @@ defword "0=", ZERO_EQ, RTO_header
 # definition for name, called a "colon definition". Enter compilation state
 # and start the current definition, producing colon-sys.
 
-    defcolon ":", COLON, CREATE_header
+    defcolon_immed ":", COLON, CREATE_header
     .word   CREATE_cfa          # CREATE
     .word   LIT_cfa
     .word   DOCOL_code          # address of DOCOL
@@ -728,7 +728,7 @@ defword "0=", ZERO_EQ, RTO_header
 # definition for name, called a "colon definition". Enter compilation state
 # and start the current definition, producing colon-sys.
 
-    defcolon ";", SEMI, COLON_header
+    defcolon_immed ";", SEMI, COLON_header
     .word   LIT_cfa
     .word   EXIT_cfa            # addres of EXIT CFA
     .word   COMMA_cfa           # ,
