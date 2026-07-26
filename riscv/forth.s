@@ -91,22 +91,40 @@ invoke_thread:
 test_thread_cfa:
     .word   DOCOL_code
 
+    # Test 1: FIND "DUP" — should return (cfa -1)
     .word   LIT_cfa
-    .word   0x0000abcd
+    .word   find_test_dup
+    .word   FIND_cfa
 
+    # Test 2: FIND "BOGUS" — should return (addr 0)
     .word   LIT_cfa
-    .word   0x12341234
-    .word   COMMA_cfa
+    .word   find_test_bogus
+    .word   FIND_cfa
 
-    .word   REFILL_cfa          # Fill the input buffer
-
-    .word   COLON_cfa
-
-    # TODO - add DUP and + to definition
-
-    .word   SEMI_cfa
+    # Test 3: FIND ";" — immediate word, should return (cfa 1)
+    .word   LIT_cfa
+    .word   find_test_semi
+    .word   FIND_cfa
 
     .word   EXIT_cfa
+
+    # -- Counted strings for FIND tests ---------------------------------------
+    .section .rodata
+    .balign CELL
+find_test_dup:
+    .byte   3                   # length
+    .ascii  "DUP"               # name
+    .balign CELL
+
+find_test_bogus:
+    .byte   5                   # length
+    .ascii  "BOGUS"             # name
+    .balign CELL
+
+find_test_semi:
+    .byte   1                   # length
+    .ascii  ";"                 # name
+    .balign CELL
 
 refill_test_str:
     .ascii  "DOUBLE"
@@ -741,6 +759,89 @@ defword "0=", ZERO_EQ, RTO_header
     .word   EXIT_cfa
 
 
+# -- FIND -----------------------------------------------------------------------
+#
+# FIND  ( addr -- cfa 1 | cfa -1 | addr 0 )
+# Find the definition named in the counted string at addr. If the definition
+# is not found, return addr and zero. If it is found and the definition is
+# immediate, also return 1; if it is found and not immediate, also return -1.
+#
+# addr points to a counted string: byte 0 = length, bytes 1..n = characters.
+
+    defword "FIND", FIND, SEMI_header
+
+    # Load counted string
+    lw      t0, 0(s3)           # t0 = addr
+
+    # Cache NOT-FOUND result early: we'll need the original addr later
+    mv      t5, t0              # t5 = addr (saved for not-found case)
+
+    lbu     t1, 0(t0)           # t1 = string length
+    addi    t2, t0, 1           # t2 = string data pointer
+
+    # Get LATEST (first header to check)
+    la      t3, latest_buf
+    lw      t3, 0(t3)           # t3 = *LATEST (first header addr)
+
+find_loop:
+    beqz    t3, find_notfound   # reached end of chain (link=0)
+
+    # Read header fields
+    lw      t0, 0(t3)           # t0 = link (save for next iteration)
+    lbu     t4, 4(t3)           # t4 = flags + length byte
+    andi    t6, t4, 0x1F        # t6 = name length (lower 5 bits)
+
+    # Compare lengths
+    bne     t1, t6, find_next   # lengths differ, skip to next
+
+    # Compare name characters
+    addi    a1, t3, 5           # a1 = name pointer in header
+    mv      a2, t2              # a2 = search string pointer
+    mv      a3, t1              # a3 = remaining count
+
+find_cmp:
+    beqz    a3, find_match      # all characters matched
+    lbu     a4, 0(a1)           # a4 = header char
+    lbu     a5, 0(a2)           # a5 = search char
+    bne     a4, a5, find_next   # mismatch
+    addi    a1, a1, 1           # advance header pointer
+    addi    a2, a2, 1           # advance search pointer
+    addi    a3, a3, -1          # decrement count
+    j       find_cmp
+
+find_match:
+    # Compute CFA address: CFA = (header + 5 + len + 3) & ~3
+    addi    t6, t3, 5           # t6 = header + 5
+    add     t6, t6, t1          # t6 = header + 5 + len
+    addi    t6, t6, 3           # t6 = header + 5 + len + 3
+    andi    t6, t6, -4          # t6 = (header + 5 + len + 3) & ~3  (rounded up)
+
+    # Determine flag: bit 6 (0x40) means immediate
+    andi    t0, t4, 0x40        # test bit 6
+    beqz    t0, find_normal
+    li      t1, 1               # immediate: flag = 1
+    j       find_return
+find_normal:
+    li      t1, -1              # normal: flag = -1
+
+find_return:
+    # Replace addr on stack with CFA, push flag
+    sw      t6, 0(s3)           # replace addr with CFA on stack
+    addi    s3, s3, -4          # push flag
+    sw      t1, 0(s3)
+    NEXT
+
+find_next:
+    mv      t3, t0              # t3 = link (follow to previous entry)
+    j       find_loop
+
+find_notfound:
+    # Return (addr 0) — original addr is still on the stack
+    addi    s3, s3, -4          # push zero flag
+    sw      zero, 0(s3)
+    NEXT
+
+
 # -- latest_buf ----------------------------------------------------------------
 # A pointer to the last dictionary entry.
 # NOTE - add new dictionary entries ABOVE this
@@ -748,5 +849,5 @@ defword "0=", ZERO_EQ, RTO_header
     .section .data
     .balign CELL
 latest_buf:                     # points to the last defword in the chain
-    .word   SEMI_header
+    .word   FIND_header
 

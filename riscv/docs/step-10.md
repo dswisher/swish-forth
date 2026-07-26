@@ -64,6 +64,92 @@ Stack effect: `( -- flag )`
 
 Forth-2012 reference: [`REFILL`](https://forth-standard.org/standard/core/REFILL)
 
+### Forth supporting words (written in Forth)
+
+Before `INTERPRET` can be compiled, several control-flow and utility
+words must be implemented in `forth.fs`. These are all compile-time words
+that manipulate `HERE` and emit `BRANCH`/`0BRANCH` with computed offsets.
+They can be written in Forth using only primitives already available.
+
+#### `'` (tick)
+
+`'` parses the next token and pushes its CFA. It is immediate — it
+executes even in compile mode so that its result can be used by compiling
+words like `IF`.
+
+Stack effect: `( "<spaces>name" -- cfa )`
+
+```forth
+: '  PARSE-NAME FIND DUP 0= ABORT" ?" ;
+```
+
+`ABORT"` isn't available yet, so initially `?` can be omitted and an
+unknown word will push 0 (detected by `IF` / `INTERPRET`).
+
+#### `BL`
+
+Push the ASCII code for space (32 = $20).
+
+```forth
+: BL  LIT 32 ;
+```
+
+#### `WORD` via `PARSE-NAME`
+
+`WORD` parses a space-delimited token and returns it as a counted string
+at `HERE`. At this stage a simpler wrapper around `PARSE-NAME` can suffice
+if `FIND`/`NUMBER` accept `( c-addr u )` format directly.
+
+#### Control-flow words
+
+Each control-flow word computes an offset (in bytes) between a saved
+position on the data stack and the current `HERE`, then compiles (or
+backpatches) a `BRANCH` or `0BRANCH` instruction.
+
+| Word | Stack (compile time) | Action |
+|------|---------------------|--------|
+| `BEGIN` | `( -- dest )` | Save `HERE` as loop entry point |
+| `AGAIN` | `( dest -- )` | Compile `BRANCH` back to `dest` |
+| `UNTIL` | `( dest -- )` | Compile `0BRANCH` back to `dest` |
+| `IF` | `( -- orig )` | Compile `0BRANCH` placeholder, save address for backpatching |
+| `THEN` | `( orig -- )` | Resolve `orig` to current `HERE` |
+| `ELSE` | `( orig1 -- orig2 )` | Compile `BRANCH` placeholder, resolve `orig1` |
+| `WHILE` | `( dest -- dest orig )` | Compile `0BRANCH` placeholder |
+| `REPEAT` | `( dest orig -- )` | Compile `BRANCH` back to `dest`, resolve `orig` |
+
+Implementations reference the CFA labels `BRANCH_cfa` and
+`ZERO_BRANCH_cfa` via `'`:
+
+```forth
+: BEGIN   HERE @ ;
+: AGAIN   ' BRANCH ,  HERE @  SWAP - , ;
+: UNTIL   ' 0BRANCH ,  HERE @  SWAP - , ;
+: IF      ' 0BRANCH ,  HERE @  LIT 0 , ;
+: THEN    HERE @  OVER -  SWAP ! ;
+: ELSE    ' BRANCH ,  HERE @  LIT 0 ,  SWAP  HERE @  SWAP -  SWAP ! ;
+: WHILE   ' 0BRANCH ,  HERE @  LIT 0 ,  SWAP ;
+: REPEAT  ' BRANCH ,  HERE @  OVER - ,  HERE @  SWAP -  SWAP ! ;
+```
+
+> **Note:** `' 0BRANCH` requires `0BRANCH` to be a Forth-visible name.
+> The assembly primitive is `defword "0BRANCH", ZERO_BRANCH, ...`, so the
+> name in the header is `0BRANCH` (not `ZERO_BRANCH`). `FIND` searches by
+> that header name, so `' 0BRANCH` works correctly.
+
+#### Ordering in `forth.fs`
+
+These words depend on `FIND` (for `'`), so the layering is:
+
+```
+forth.s primitives:  FIND, NUMBER, EXECUTE, REFILL
+forth.fs:            BL, ', IF, THEN, ELSE, BEGIN, AGAIN, UNTIL, ...
+                     WHILE, REPEAT
+                     WORD
+                     . (DOT)        -- display top of stack
+                     INTERPRET
+                     QUIT
+```
+
 ### `INTERPRET` (written in Forth)
 
 Once the above primitives exist, `INTERPRET` can be written as a Forth
@@ -106,7 +192,7 @@ word:
 ## Files
 
 - `forth.s` — add `FIND`, `NUMBER`, `EXECUTE`, `REFILL` (update)
-- `forth.fs` — add `INTERPRET`, `QUIT` in Forth (new)
+- `forth.fs` — add `BL`, `'`, `IF`, `THEN`, `ELSE`, `BEGIN`, `AGAIN`, `UNTIL`, `WHILE`, `REPEAT`, `WORD`, `.` (DOT), `INTERPRET`, `QUIT` in Forth (new)
 
 ## Verification
 
