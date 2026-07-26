@@ -23,6 +23,7 @@ SECTIONS
 
     .text   : { *(.text*)   } > RAM
     .rodata : { *(.rodata*) } > RAM
+    .data   : { *(.data*)   } > RAM
 
     /* .bss is zero-initialised; NOLOAD tells the linker not to include
      * it in the binary image — the kernel clears it at startup. */
@@ -30,5 +31,6 @@ SECTIONS
 
     /* _end marks the top of statically allocated memory.
      * The dictionary heap grows upward from here. */
+    . = ALIGN(4);
     _end = .;
 }

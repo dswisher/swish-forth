@@ -47,3 +47,18 @@ end
 document frstack
 Display Forth return stack contents, top first.
 end
+
+
+define phere
+    set $here = *(int*)&here_buf
+    if $argc == 0
+        x/4xw $here - 16
+    else
+        set $n = $arg0
+        set $addr = $here - ($n * 4)
+        eval "x/%dxw 0x%x", $n, $addr
+    end
+end
+document phere
+Display the top N words of the dictionary area (default N=4)
+end

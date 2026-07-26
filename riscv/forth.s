@@ -45,6 +45,17 @@ source_len_buf:
 in_buf:
     .space IN_BUF_SIZE          # The input buffer
 
+
+# -- DATA layout ---------------------------------------------------------------
+
+    .section .data
+    .balign CELL
+here_buf:
+    .word   _end
+
+# NOTE - latest_buf is an exception, and lives at the bottom of the file
+
+
 # -- Entry point ---------------------------------------------------------------
 
     .text
@@ -76,18 +87,17 @@ invoke_thread:
 test_thread_cfa:
     .word   DOCOL_code
 
-    .word   REFILL_cfa      # fill the buffer with goodness
-    .word   DROP_cfa        # drop the true flag
+    .word   LIT_cfa
+    .word   0x1111
+    .word   COMMA_cfa
 
-    .word   PARSE_NAME_cfa  # parse HELLO
-    .word   DROP_cfa        # ...and drop it
-    .word   DROP_cfa
+    .word   LIT_cfa
+    .word   0x2222
+    .word   COMMA_cfa
 
-    .word   PARSE_NAME_cfa  # parse WORLD
-    .word   DROP_cfa        # ...and drop it
-    .word   DROP_cfa
-
-    .word   PARSE_NAME_cfa  # try to parse again -> success should be false
+    .word   LIT_cfa
+    .word   0x3333
+    .word   COMMA_cfa
 
     .word   EXIT_cfa
 
@@ -407,4 +417,97 @@ parse_name_empty:
     la      t0, in_buf
     li      t5, 0
     j       parse_name_update
+
+
+# -- HERE ----------------------------------------------------------------------
+#
+# HERE  ( -- addr )
+# addr is the data-space pointer.
+
+    defword "HERE", HERE, PARSE_NAME_header
+    addi    s3, s3, -4          # make room on the stack
+    la      t0, here_buf        # push the HERE address
+    sw      t0, 0(s3)
+    NEXT
+
+
+# -- LATEST --------------------------------------------------------------------
+#
+# LATEST  ( -- addr )
+# addr is the LATEST pointer.
+
+    defword "LATEST", LATEST, HERE_header
+    addi    s3, s3, -4          # make room on the stack
+    la      t0, latest_buf      # push the LATEST address
+    sw      t0, 0(s3)
+    NEXT
+
+
+# -- STORE ---------------------------------------------------------------------
+#
+# !  ( x a-addr -- )
+# Store x at a-addr.
+
+    defword "!", STORE, LATEST_header
+    lw      t0, 0(s3)           # TMP1 = a-addr
+    addi    s3, s3, 4           # pop
+    lw      t1, 0(s3)           # TMP2 = x
+    addi    s3, s3, 4           # pop
+    sw      t1, 0(t0)           # *addr = x
+    NEXT
+
+
+# -- FETCH ---------------------------------------------------------------------
+#
+# @  ( a-addr -- x )
+# x is the value stored at a-addr.
+
+    defword "@", FETCH, STORE_header
+    lw      t0, 0(s3)           # TMP1 = addr
+    lw      t1, 0(t0)           # TMP2 = *addr
+    sw      t1, 0(s3)           # stack = x
+    NEXT
+
+
+# -- PLUS ----------------------------------------------------------------------
+#
+# +  ( x1 x2 -- x1 + x2 )
+# Add x1 and x2 giving the sum x1 + x2
+
+    defword "+", PLUS, FETCH_header
+    lw      t0, 0(s3)           # TMP1 = x2
+    addi    s3, s3, 4           # pop
+    lw      t1, 0(s3)           # TMP2 = x1
+    add     t0, t0, t1          # TMP1 = TMP1 + TMP2
+    sw      t0, 0(s3)           # stack = sum
+    NEXT
+
+
+# -- COMMA ---------------------------------------------------------------------
+#
+# ,  ( x -- )
+# Reserve one cell of data space and store x in the cell.
+
+    defcolon ",", COMMA, PLUS_header
+    .word   HERE_cfa            # HERE          ( n HERE )
+    .word   FETCH_cfa           # @             ( n H )
+    .word   STORE_cfa           # !             ( )
+    .word   HERE_cfa            # HERE          ( HERE )
+    .word   FETCH_cfa           # @             ( H )
+    .word   LIT_cfa             # 4             ( H 4 )
+    .word   4
+    .word   PLUS_cfa            # +             ( H+4 )
+    .word   HERE_cfa            # HERE          ( H+4 HERE )
+    .word   STORE_cfa           # !             ( )
+    .word   EXIT_cfa
+
+
+# -- latest_buf ----------------------------------------------------------------
+# A pointer to the last dictionary entry.
+# NOTE - add new dictionary entries ABOVE this
+
+    .section .data
+    .balign CELL
+latest_buf:                     # points to the last defword in the chain
+    .word   COMMA_header
 

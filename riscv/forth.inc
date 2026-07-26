@@ -53,6 +53,7 @@
     jr      t0                  # jump to code
 .endm
 
+
 # -- defword macro -------------------------------------------------------------
 #
 # defword creates a dictionary entry header for a primitive word.
@@ -95,3 +96,38 @@
     .globl  \label\()_code
 \label\()_code:                 # code label follows immediately in .text
 .endm
+
+
+# -- defcolon macro ------------------------------------------------------------
+#
+# defcolon creates a dictionary entry header for a colon definition.
+#
+# For dictionary layout, see above.
+#
+# Arguments:
+#   name    - the Forth name as a quoted string (e.g. "EXIT")
+#   label   - the assembly label used to refer to this word (e.g. EXIT)
+#   link    - the label of the previous word's header (0 for the first word)
+#
+# Usage:
+#   defcolon ",", COMMA, PLUS_header
+#       .word   HERE_cfa
+#           ... more words ...
+#       .word   EXIT_cfa
+
+.macro defcolon name, label, link
+    .section .rodata
+    .balign CELL
+    .globl  \label\()_header
+    .globl  \label\()_cfa
+\label\()_header:
+    .word   \link
+    .byte   (.Lcn_end_\label - .Lcn_start_\label)
+.Lcn_start_\label:
+    .ascii  "\name"
+.Lcn_end_\label:
+    .balign CELL
+\label\()_cfa:
+    .word   DOCOL_code
+.endm
+

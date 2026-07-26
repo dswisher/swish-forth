@@ -40,7 +40,7 @@ QEMU_FLAGS  := -machine virt -nographic -bios none -kernel $(TARGET)
 GDB_PORT    := 1234
 GDB_REMOTE  := -ex "target remote :$(GDB_PORT)"
 GDB_FLAGS   := -ex "set architecture riscv:rv32" \
-               -ex "break EXIT_code" \
+               -ex "break halt_code" \
                -ex "layout split"
 
 # ── Phony targets ──────────────────────────────────────────────────────────────
