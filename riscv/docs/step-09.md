@@ -39,22 +39,22 @@ A `LATEST` variable holds the address of the most recently defined word.
 `CREATE` can be implemented as a colon definition, but it requires several
 primitives that are not yet present. These must be added to `forth.s` first:
 
-| Word    | Stack effect          | Description |
-|---------|-----------------------|-------------|
-| `HERE`  | `( -- a-addr )`       | Push address of the `HERE` variable |
-| `LATEST`| `( -- a-addr )`       | Push address of the `LATEST` variable |
-| `@`     | `( a-addr -- x )`     | Fetch cell from address |
-| `!`     | `( x a-addr -- )`     | Store cell to address |
-| `C@`    | `( c-addr -- char )`  | Fetch byte from address |
-| `C!`    | `( char c-addr -- )`  | Store byte to address |
-| `,`     | `( x -- )`            | Append cell at `HERE`, advance `HERE` by 4 |
-| `C,`    | `( char -- )`         | Append byte at `HERE`, advance `HERE` by 1 |
-| `+`     | `( n1 n2 -- n )`      | Add |
-| `-`     | `( n1 n2 -- n )`      | Subtract |
-| `AND`   | `( n1 n2 -- n )`      | Bitwise AND |
-| `0=`    | `( n -- flag )`       | True if n is zero (used for loop termination) |
-| `>R`    | `( x -- ) R:( -- x )` | Move top of data stack to return stack |
-| `R>`    | `( -- x ) R:( x -- )` | Move top of return stack to data stack |
+| Word    | Stack effect          | Description | Standard |
+|---------|-----------------------|-------------|----------|
+| `HERE`  | `( -- a-addr )`       | Push address of the `HERE` variable | [HERE](https://forth-standard.org/standard/core/HERE) |
+| `LATEST`| `( -- a-addr )`       | Push address of the `LATEST` variable | non-standard |
+| `@`     | `( a-addr -- x )`     | Fetch cell from address | [`@`](https://forth-standard.org/standard/core/Fetch) |
+| `!`     | `( x a-addr -- )`     | Store cell to address | [`!`](https://forth-standard.org/standard/core/Store) |
+| `C@`    | `( c-addr -- char )`  | Fetch byte from address | [`C@`](https://forth-standard.org/standard/core/CFetch) |
+| `C!`    | `( char c-addr -- )`  | Store byte to address | [`C!`](https://forth-standard.org/standard/core/CStore) |
+| `,`     | `( x -- )`            | Append cell at `HERE`, advance `HERE` by 4 | [`,`](https://forth-standard.org/standard/core/Comma) |
+| `C,`    | `( char -- )`         | Append byte at `HERE`, advance `HERE` by 1 | [`C,`](https://forth-standard.org/standard/core/CComma) |
+| `+`     | `( n1 n2 -- n )`      | Add | [`+`](https://forth-standard.org/standard/core/Plus) |
+| `-`     | `( n1 n2 -- n )`      | Subtract | [`-`](https://forth-standard.org/standard/core/Minus) |
+| `AND`   | `( n1 n2 -- n )`      | Bitwise AND | [`AND`](https://forth-standard.org/standard/core/AND) |
+| `0=`    | `( n -- flag )`       | True if n is zero (used for loop termination) | [`0=`](https://forth-standard.org/standard/core/ZeroEqual) |
+| `>R`    | `( x -- ) R:( -- x )` | Move top of data stack to return stack | [`>R`](https://forth-standard.org/standard/core/toR) |
+| `R>`    | `( -- x ) R:( x -- )` | Move top of return stack to data stack | [`R>`](https://forth-standard.org/standard/core/Rfrom) |
 
 `1+` and `1-` do not need to be separate primitives — `LIT 1 +` and
 `LIT 1 -` are sufficient inside the colon definition.
