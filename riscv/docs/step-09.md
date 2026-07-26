@@ -63,7 +63,7 @@ With these in place, alignment padding can be computed in Forth directly —
 no separate `ALLOT` primitive is needed at this stage:
 
 ```forth
-HERE 3 + -4 AND HERE !
+HERE @ 3 + -4 AND HERE !
 ```
 
 This rounds `HERE` up to the next 4-byte boundary.
@@ -87,7 +87,7 @@ place) rather than as a raw assembly primitive:
 1. Call `PARSE-NAME` to parse the next space-delimited name from the input stream
 2. Write the link field (pointing to the current `LATEST`) using `LATEST @ ,`
 3. Write the flags+length byte and the name characters using `C,` in a loop
-4. Pad `HERE` to a 4-byte boundary: `HERE 3 + -4 AND HERE !`
+4. Pad `HERE` to a 4-byte boundary: `HERE @ 3 + -4 AND HERE !`
 5. Update `LATEST` to point to the new header using `LATEST !`
 6. Leave `HERE` pointing at the CFA slot (the caller writes the CFA next)
 
@@ -116,7 +116,7 @@ OVER C,                 ( c-addr u hdr )    \ step 3a: write length
   DROP DROP             ( )                 \ drop count and pointer
   R>                    ( hdr )             \ retrieve saved header address
 \ step 4: pad HERE to 4-byte boundary
-HERE LIT 3 + LIT -4 AND HERE !
+HERE @ LIT 3 + LIT -4 AND HERE !
 \ step 5: update LATEST
 LATEST !
 ```

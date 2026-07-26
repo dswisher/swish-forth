@@ -87,11 +87,20 @@ invoke_thread:
 test_thread_cfa:
     .word   DOCOL_code
 
+    .word   HERE_cfa            # Put a few things on the stack for handy reference
+    .word   FETCH_cfa
+    .word   LATEST_cfa
+    .word   FETCH_cfa
     .word   LIT_cfa
-    .word   12
+    .word   0xabcd
+
     .word   LIT_cfa
-    .word   2
-    .word   SUBTRACT_cfa
+    .word   0x12341234
+    .word   COMMA_cfa
+
+    .word   REFILL_cfa          # Fill the input buffer
+
+    .word   CREATE_cfa          # word under test
 
     .word   EXIT_cfa
 
@@ -221,7 +230,7 @@ DOCOL_code:
 
 # -- 0BRANCH -------------------------------------------------------------------
 
-    defword "0BRANCH", ZBRANCH, BRANCH_header
+    defword "0BRANCH", ZERO_BRANCH, BRANCH_header
     lw      t0, 0(s3)           # TMP = x1 (flag)
     addi    s3, s3, 4           # DSP += CELL (pop)
     beqz    t0, bz_true
@@ -240,7 +249,7 @@ bz_done:
 # Send the character on top of the data stack to the output device.
 # Calls platform_putc, which is provided by files in platform/*.s
 
-    defword "EMIT", EMIT, ZBRANCH_header
+    defword "EMIT", EMIT, ZERO_BRANCH_header
     lw      a0, 0(s3)           # a0 = char
     addi    s3, s3, 4           # pop DSP
     call    platform_putc
@@ -465,29 +474,114 @@ parse_name_empty:
 
 # -- PLUS ----------------------------------------------------------------------
 #
-# +  ( x1 x2 -- x1+x2 )
-# Add x1 and x2 giving the sum x1 + x2
+# +  ( x1 x2 -- x3 )
+# Add x1 and x2 giving the sum x3
 
     defword "+", PLUS, FETCH_header
     lw      t0, 0(s3)           # TMP1 = x2
     addi    s3, s3, 4           # pop
     lw      t1, 0(s3)           # TMP2 = x1
     add     t0, t0, t1          # TMP1 = TMP1 + TMP2
-    sw      t0, 0(s3)           # stack = sum
+    sw      t0, 0(s3)           # stack = result
     NEXT
 
 
-# -- SUBTRACT ------------------------------------------------------------------
+# -- MINUS ---------------------------------------------------------------------
 #
-# -  ( x1 x2 -- x1-x2 )
-# Subtract x2 from x1 giving the difference x2 - x1
+# -  ( x1 x2 -- x3 )
+# Subtract x2 from x1 giving the difference x3 (x1 - x2)
 
-    defword "-", SUBTRACT, PLUS_header
+    defword "-", MINUS, PLUS_header
     lw      t0, 0(s3)           # TMP1 = x2
     addi    s3, s3, 4           # pop
     lw      t1, 0(s3)           # TMP2 = x1
     sub     t0, t1, t0          # TMP1 = x1 - x2
-    sw      t0, 0(s3)           # stack = sum
+    sw      t0, 0(s3)           # stack = result
+    NEXT
+
+
+# -- AND -----------------------------------------------------------------------
+#
+# AND  ( x1 x2 -- x3 )
+# x3 is the bit-by-bit logical "and" of x1 with x2.
+
+    defword "AND", AND, MINUS_header
+    lw      t0, 0(s3)           # TMP1 = x2
+    addi    s3, s3, 4           # pop
+    lw      t1, 0(s3)           # TMP2 = x1
+    and     t0, t1, t0          # TMP1 = x1 & x2
+    sw      t0, 0(s3)           # stack = result
+    NEXT
+
+
+# -- C@ ------------------------------------------------------------------------
+#
+# C@  ( c-addr -- char )
+# Fetch the character stored at c-addr.
+
+    defword "C@", CFETCH, AND_header
+    lw      t0, 0(s3)           # TMP1 = addr
+    lbu     t1, 0(t0)           # TMP2 = *addr
+    sw      t1, 0(s3)           # stack = TMP2
+    NEXT
+
+
+# -- C! ------------------------------------------------------------------------
+#
+# C!  ( char c-addr -- )
+# Store char at c-addr.
+
+    defword "C!", CSTORE, CFETCH_header
+    lw      t0, 0(s3)           # TMP1 = a-addr
+    addi    s3, s3, 4           # pop
+    lw      t1, 0(s3)           # TMP2 = x
+    addi    s3, s3, 4           # pop
+    sb      t1, 0(t0)           # *addr = x
+    NEXT
+
+
+# -- C, ------------------------------------------------------------------------
+#
+# C,  ( char -- )
+# Reserve space for one character in the data space and store char in the space.
+
+    defcolon "C,", CCOMMA, CSTORE_header
+    .word   HERE_cfa            # HERE          ( char HERE )
+    .word   FETCH_cfa           # @             ( char H )
+    .word   CSTORE_cfa          # C!            ( )
+    .word   HERE_cfa            # HERE          ( HERE )
+    .word   FETCH_cfa           # @             ( H )
+    .word   LIT_cfa             # 1             ( H 1 )
+    .word   1
+    .word   PLUS_cfa            # +             ( H+1 )
+    .word   HERE_cfa            # HERE          ( H+1 HERE )
+    .word   STORE_cfa           # !             ( )
+    .word   EXIT_cfa
+
+
+# -- R> ------------------------------------------------------------------------
+#
+# R>  ( -- x ) ( R: x -- )
+# Move x from the return stack to the data stack.
+
+    defword "R>", RFROM, CCOMMA_header
+    lw      t0, 0(s2)           # TMP = *RSP
+    addi    s2, s2, 4           # RSP += CELL
+    addi    s3, s3, -4          # DSP -= CELL
+    sw      t0, 0(s3)           # *DSP = x
+    NEXT
+
+
+# -- >R ------------------------------------------------------------------------
+#
+# >R  ( x -- ) ( R: -- x )
+# Move x to the return stack.
+
+    defword ">R", RTO, RFROM_header
+    lw      t0, 0(s3)           # TMP = *SSP
+    addi    s3, s3, 4           # DSP += CELL
+    addi    s2, s2, -4          # RSP -= CELL
+    sw      t0, 0(s2)           # *RSP = x
     NEXT
 
 
@@ -496,7 +590,7 @@ parse_name_empty:
 # 0=  ( x -- flag )
 # flag is true if and only if x is equal to zero.
 
-defword "0=", ZERO_EQ, SUBTRACT_header
+defword "0=", ZERO_EQ, RTO_header
     lw      t0, 0(s3)       # load top of stack
     seqz    t0, t0          # t0 = 1 if t0==0, else 0
     neg     t0, t0          # convert to Forth true (-1) or false (0)
@@ -523,6 +617,73 @@ defword "0=", ZERO_EQ, SUBTRACT_header
     .word   EXIT_cfa
 
 
+# -- CREATE --------------------------------------------------------------------
+#
+# CREATE  ( "<spaces>name" -- )
+# Skip leading space delimiters. Parse name delimited by a space. Create a
+# definition for name with the execution semantics defined below.
+
+    defcolon "CREATE", CREATE, COMMA_header
+    .word   PARSE_NAME_cfa      # PARSE-NAME              ( c-addr u )
+    .word   HERE_cfa
+    .word   FETCH_cfa           # HERE @                  ( c-addr u hdr )
+    .word   LATEST_cfa
+    .word   FETCH_cfa
+    .word   COMMA_cfa           # LATEST @ ,              ( c-addr u hdr )    \ step 2: write link
+    .word   OVER_cfa
+    .word   CCOMMA_cfa          # OVER C,                 ( c-addr u hdr )    \ step 3a: write length
+    .word   RTO_cfa             # >R                      ( c-addr u )        \ park hdr on return stack
+
+    # \ step 3b: loop — ( c-addr u )
+    # <loop-top>:
+
+    .word   DUP_cfa
+    .word   ZERO_EQ_cfa
+    .word   ZERO_BRANCH_cfa     # DUP 0= 0BRANCH <loop-body>
+    .word   12
+
+    .word   BRANCH_cfa          # BRANCH <loop-done>
+    .word   56
+
+    # <loop-body>:
+    .word   OVER_cfa
+    .word   CFETCH_cfa          #   OVER C@               ( c-addr u char )   \ fetch next char
+    .word   CCOMMA_cfa          #   C,                    ( c-addr u )        \ append to HERE
+    .word   SWAP_cfa
+    .word   LIT_cfa
+    .word   1
+    .word   PLUS_cfa
+    .word   SWAP_cfa            #   SWAP LIT 1 + SWAP     ( c-addr+1 u )      \ advance pointer
+    .word   LIT_cfa
+    .word   1
+    .word   MINUS_cfa           #   LIT 1 -               ( c-addr+1 u-1 )    \ decrement count
+    .word   BRANCH_cfa          #   BRANCH <loop-top>
+    .word   -72
+
+    # <loop-done>:
+    .word   DROP_cfa
+    .word   DROP_cfa            #   DROP DROP             ( )                 \ drop count and pointer
+    .word   RFROM_cfa           #   R>                    ( hdr )             \ retrieve saved header address
+
+    # \ step 4: pad HERE to 4-byte boundary
+    .word   HERE_cfa
+    .word   FETCH_cfa
+    .word   LIT_cfa
+    .word   3
+    .word   PLUS_cfa
+    .word   LIT_cfa
+    .word   -4
+    .word   AND_cfa
+    .word   HERE_cfa
+    .word   STORE_cfa           # HERE LIT 3 + LIT -4 AND HERE !
+
+    # \ step 5: update LATEST
+    .word   LATEST_cfa
+    .word   STORE_cfa           # LATEST !
+
+    .word   EXIT_cfa
+
+
 # -- latest_buf ----------------------------------------------------------------
 # A pointer to the last dictionary entry.
 # NOTE - add new dictionary entries ABOVE this
@@ -530,5 +691,5 @@ defword "0=", ZERO_EQ, SUBTRACT_header
     .section .data
     .balign CELL
 latest_buf:                     # points to the last defword in the chain
-    .word   COMMA_header
+    .word   CREATE_header
 
