@@ -88,16 +88,10 @@ test_thread_cfa:
     .word   DOCOL_code
 
     .word   LIT_cfa
-    .word   0x1111
-    .word   COMMA_cfa
-
+    .word   12
     .word   LIT_cfa
-    .word   0x2222
-    .word   COMMA_cfa
-
-    .word   LIT_cfa
-    .word   0x3333
-    .word   COMMA_cfa
+    .word   2
+    .word   SUBTRACT_cfa
 
     .word   EXIT_cfa
 
@@ -471,7 +465,7 @@ parse_name_empty:
 
 # -- PLUS ----------------------------------------------------------------------
 #
-# +  ( x1 x2 -- x1 + x2 )
+# +  ( x1 x2 -- x1+x2 )
 # Add x1 and x2 giving the sum x1 + x2
 
     defword "+", PLUS, FETCH_header
@@ -483,12 +477,39 @@ parse_name_empty:
     NEXT
 
 
+# -- SUBTRACT ------------------------------------------------------------------
+#
+# -  ( x1 x2 -- x1-x2 )
+# Subtract x2 from x1 giving the difference x2 - x1
+
+    defword "-", SUBTRACT, PLUS_header
+    lw      t0, 0(s3)           # TMP1 = x2
+    addi    s3, s3, 4           # pop
+    lw      t1, 0(s3)           # TMP2 = x1
+    sub     t0, t1, t0          # TMP1 = x1 - x2
+    sw      t0, 0(s3)           # stack = sum
+    NEXT
+
+
+# -- 0= ------------------------------------------------------------------------
+#
+# 0=  ( x -- flag )
+# flag is true if and only if x is equal to zero.
+
+defword "0=", ZERO_EQ, SUBTRACT_header
+    lw      t0, 0(s3)       # load top of stack
+    seqz    t0, t0          # t0 = 1 if t0==0, else 0
+    neg     t0, t0          # convert to Forth true (-1) or false (0)
+    sw      t0, 0(s3)       # store result
+    NEXT
+
+
 # -- COMMA ---------------------------------------------------------------------
 #
 # ,  ( x -- )
 # Reserve one cell of data space and store x in the cell.
 
-    defcolon ",", COMMA, PLUS_header
+    defcolon ",", COMMA, ZERO_EQ_header
     .word   HERE_cfa            # HERE          ( n HERE )
     .word   FETCH_cfa           # @             ( n H )
     .word   STORE_cfa           # !             ( )

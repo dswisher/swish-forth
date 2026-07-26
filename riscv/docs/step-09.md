@@ -50,7 +50,14 @@ primitives that are not yet present. These must be added to `forth.s` first:
 | `,`     | `( x -- )`            | Append cell at `HERE`, advance `HERE` by 4 |
 | `C,`    | `( char -- )`         | Append byte at `HERE`, advance `HERE` by 1 |
 | `+`     | `( n1 n2 -- n )`      | Add |
+| `-`     | `( n1 n2 -- n )`      | Subtract |
 | `AND`   | `( n1 n2 -- n )`      | Bitwise AND |
+| `0=`    | `( n -- flag )`       | True if n is zero (used for loop termination) |
+| `>R`    | `( x -- ) R:( -- x )` | Move top of data stack to return stack |
+| `R>`    | `( -- x ) R:( x -- )` | Move top of return stack to data stack |
+
+`1+` and `1-` do not need to be separate primitives — `LIT 1 +` and
+`LIT 1 -` are sufficient inside the colon definition.
 
 With these in place, alignment padding can be computed in Forth directly —
 no separate `ALLOT` primitive is needed at this stage:
@@ -84,9 +91,47 @@ place) rather than as a raw assembly primitive:
 5. Update `LATEST` to point to the new header using `LATEST !`
 6. Leave `HERE` pointing at the CFA slot (the caller writes the CFA next)
 
+The name-copying loop in step 3 has no `DO`/`LOOP` at this stage, so it is
+written using `0BRANCH`. The header address `hdr` is parked on the return
+stack during the loop using `>R`/`R>`, giving the loop a clean
+`( c-addr u )` stack discipline:
+
+```forth
+PARSE-NAME              ( c-addr u )
+HERE @                  ( c-addr u hdr )
+LATEST @ ,              ( c-addr u hdr )    \ step 2: write link
+OVER C,                 ( c-addr u hdr )    \ step 3a: write length
+>R                      ( c-addr u )        \ park hdr on return stack
+\ step 3b: loop — ( c-addr u )
+<loop-top>:
+  DUP 0= 0BRANCH <loop-body>
+  BRANCH <loop-done>
+<loop-body>:
+  OVER C@               ( c-addr u char )   \ fetch next char
+  C,                    ( c-addr u )        \ append to HERE
+  SWAP LIT 1 + SWAP     ( c-addr+1 u )      \ advance pointer
+  LIT 1 -               ( c-addr+1 u-1 )    \ decrement count
+  BRANCH <loop-top>
+<loop-done>:
+  DROP DROP             ( )                 \ drop count and pointer
+  R>                    ( hdr )             \ retrieve saved header address
+\ step 4: pad HERE to 4-byte boundary
+HERE LIT 3 + LIT -4 AND HERE !
+\ step 5: update LATEST
+LATEST !
+```
+
+This requires `>R` (`( x -- )`, push to return stack) and `R>` (`( -- x )`,
+pop from return stack) as additional primitives.
+
 `CREATE` does **not** write a CFA or allocate a data field — that is left
 to the caller. `CREATE` is also the foundation for `VARIABLE`, `CONSTANT`,
 and `DOES>`.
+
+**Error handling:** if `PARSE-NAME` returns `u=0` (empty parse area), the
+behavior of `CREATE` is undefined by the Forth-2012 standard. At this stage
+`CREATE` does not check for this condition — proper error handling via
+`THROW`/`CATCH` is deferred to a later step.
 
 Stack effect: `( "<spaces>name" -- )`
 
@@ -126,7 +171,7 @@ above. The layering is:
 
 ```
 PARSE-NAME  -- parses a token from >IN, returns ( c-addr u ) into the input buffer
-@, !, C@, C!, +, AND, ,, C,  -- primitives used by CREATE
+@, !, C@, C!, +, -, AND, 0=, >R, R>, ,, C,  -- primitives used by CREATE
 CREATE      -- colon definition: calls PARSE-NAME, builds the dictionary header
 :           -- colon definition: calls CREATE, writes DOCOL as CFA, sets STATE=compile
 ;           -- colon definition: compiles EXIT, resets STATE (immediate)
@@ -138,8 +183,9 @@ run during compilation, not be compiled).
 
 ## Files
 
-- `forth.s` — add `HERE`, `LATEST`, `STATE`, `@`, `!`, `C@`, `C!`, `,`, `C,`, `+`, `AND`
-  as primitives; then implement `CREATE`, `:`, `;` as colon definitions (update)
+- `forth.s` — add `HERE`, `LATEST`, `STATE`, `@`, `!`, `C@`, `C!`, `,`, `C,`, `+`, `-`,
+  `AND`, `0=`, `>R`, `R>` as primitives; then implement `CREATE`, `:`, `;` as colon
+  definitions (update)
 
 ## Verification
 
