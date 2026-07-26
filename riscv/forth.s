@@ -91,58 +91,32 @@ invoke_thread:
 test_thread_cfa:
     .word   DOCOL_code
 
-    # Test 1: NUMBER "123", 3 -> should return (123, true)
+    # Test: EXECUTE DUP on value 42 -> stack: [42][42]
     .word   LIT_cfa
-    .word   number_test_123
+    .word   42
     .word   LIT_cfa
-    .word   3
-    .word   NUMBER_cfa
+    .word   DUP_cfa
+    .word   EXECUTE_cfa
 
-    # Test 2: NUMBER "12A3", 4 -> should return (addr, len, false)
+    # Test: EXECUTE DROP -> stack: [42]
     .word   LIT_cfa
-    .word   number_test_bad
-    .word   LIT_cfa
-    .word   4
-    .word   NUMBER_cfa
+    .word   DROP_cfa
+    .word   EXECUTE_cfa
 
-    # Test 3: NUMBER "", 0 -> should return (addr, 0, false)
+    # Test: EXECUTE DUP again -> stack: [42][42]
     .word   LIT_cfa
-    .word   number_test_empty
+    .word   DUP_cfa
+    .word   EXECUTE_cfa
+
+    # Test: EXECUTE + (adds top two) -> requires two values
+    # DUP already gave us [42][42], + should give [84]
     .word   LIT_cfa
-    .word   0
-    .word   NUMBER_cfa
+    .word   PLUS_cfa
+    .word   EXECUTE_cfa
 
     .word   EXIT_cfa
 
-    # -- Test strings for NUMBER tests ---------------------------------------
-    .section .rodata
-    .balign CELL
-number_test_123:
-    .ascii  "123"
-    .balign CELL
-
-number_test_bad:
-    .ascii  "12A3"
-    .balign CELL
-
-number_test_empty:
-    .ascii  ""                  # empty, but .balign pads the alignment
-    .balign CELL
-
-find_test_dup:
-    .byte   3                   # length
-    .ascii  "DUP"               # name
-    .balign CELL
-
-find_test_bogus:
-    .byte   5                   # length
-    .ascii  "BOGUS"             # name
-    .balign CELL
-
-find_test_semi:
-    .byte   1                   # length
-    .ascii  ";"                 # name
-    .balign CELL
+    # -- Test strings ----------------------------------------------------------
 
 refill_test_str:
     .ascii  "DOUBLE"
@@ -911,6 +885,20 @@ number_fail:
     NEXT
 
 
+# -- EXECUTE --------------------------------------------------------------------
+#
+# EXECUTE  ( cfa -- )
+# Pop a CFA from the stack and execute the word it points to. Execution
+# continues with the word's own NEXT, which will return to the current
+# thread at the CFA following EXECUTE.
+
+    defword "EXECUTE", EXECUTE, NUMBER_header
+    lw      s1, 0(s3)           # W (s1) = CFA from stack
+    addi    s3, s3, 4           # pop CFA
+    lw      t0, 0(s1)           # t0 = *W (code pointer)
+    jr      t0                  # jump to the word's code
+
+
 # -- latest_buf ----------------------------------------------------------------
 # A pointer to the last dictionary entry.
 # NOTE - add new dictionary entries ABOVE this
@@ -918,5 +906,5 @@ number_fail:
     .section .data
     .balign CELL
 latest_buf:                     # points to the last defword in the chain
-    .word   NUMBER_header
+    .word   EXECUTE_header
 
