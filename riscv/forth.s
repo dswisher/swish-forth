@@ -96,31 +96,27 @@ _start:
     # RSP points to the top item; stack grows downward into rsp_buf.
     la      s2, rsp_top
 
-    # -- test harness ----------------------------------------------------------
-    # Test EMIT by using a pseudo-thread to invoke a "real" thread
+    # -- cold start -------------------------------------------------------------
+    # Bootstrap the system by loading block 0.
 
-_invoke:
-    la      s0, invoke_thread
+cold:
+    la      s0, cold_thread
     NEXT
 
     .section .rodata
     .balign CELL
-invoke_thread:
-    .word   test_thread_cfa     # Run the test!
-    .word   halt_word_cfa       # Stop the program
+cold_thread:
+    .word   boot_cfa             # Load block 0 (defines core words, calls QUIT)
+    .word   halt_word_cfa         # Never reached; QUIT loops forever
 
 
-test_thread_cfa:
+boot_cfa:
     .word   DOCOL_code
 
+    # Bootstrap: load block 0 (defines core words, calls QUIT)
     .word   LIT_cfa
-    .word   62                  # '>'
-    .word   EMIT_cfa
-    .word   LIT_cfa
-    .word   32                  # space
-    .word   EMIT_cfa
-
-    .word   QUIT_cfa
+    .word   0
+    .word   LOAD_cfa
 
     .word   EXIT_cfa
 

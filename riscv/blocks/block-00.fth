@@ -1,4 +1,5 @@
-: DOUBLE DUP + ;
+QUIT
+
 
 
 
