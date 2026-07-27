@@ -49,6 +49,10 @@ in_buf:
 state_buf:
     .space CELL                 # The complation state: 0 = interpreting, non-zero = compiling
 
+    .balign CELL
+word_buf:
+    .space WORD_BUF_SIZE        # Buffer for WORD's counted string output
+
 
 # -- DATA layout ---------------------------------------------------------------
 
@@ -928,18 +932,30 @@ number_fail:
 # -- WORD ----------------------------------------------------------------------
 #
 # WORD  ( -- c-addr )
-# Parse a space-delimited token and copy it to HERE as a counted string
+# Parse a space-delimited token and copy it to word_buf as a counted string
 # suitable for FIND. Returns the address of the counted string.
+# Uses a fixed buffer (word_buf) instead of HERE to avoid overwriting
+# the current compilation target in compile mode.
 
     defcolon "WORD", WORD, BL_header
-    .word   DROP_cfa            # drop delimiter char (PARSE-NAME handles spaces)
-    .word   PARSE_NAME_cfa      # PARSE-NAME              ( c-addr u )
+    .word   DROP_cfa            # drop delimiter char
+
+    # Save old HERE, redirect to word_buf
     .word   HERE_cfa
     .word   FETCH_cfa
-    .word   RTO_cfa             # HERE @ >R               ( c-addr u )        \ save hdr on return stack
+    .word   RTO_cfa             # >R — save old HERE: R:(old_HERE)
+    .word   LIT_cfa
+    .word   word_buf
+    .word   HERE_cfa
+    .word   STORE_cfa           # HERE ! — redirect HERE to word_buf
+
+    .word   PARSE_NAME_cfa      # PARSE-NAME              ( c-addr u )
+    .word   LIT_cfa
+    .word   word_buf
+    .word   RTO_cfa             # >R — park hdr: R:(old_HERE word_buf)
 
     .word   DUP_cfa
-    .word   CCOMMA_cfa          # DUP C,                  ( c-addr u )        \ write length byte
+    .word   CCOMMA_cfa          # DUP C,                  ( c-addr u )        \ write length at word_buf[0]
 
     # \ copy loop — ( c-addr u )
     # <loop-top>:
@@ -954,7 +970,7 @@ number_fail:
     # <loop-body>:
     .word   OVER_cfa
     .word   CFETCH_cfa          #   OVER C@               ( c-addr u char )   \ fetch next char
-    .word   CCOMMA_cfa          #   C,                    ( c-addr u )        \ append to HERE
+    .word   CCOMMA_cfa          #   C,                    ( c-addr u )        \ append to word_buf
     .word   SWAP_cfa
     .word   LIT_cfa
     .word   1
@@ -969,7 +985,13 @@ number_fail:
     # <loop-done>:
     .word   DROP_cfa
     .word   DROP_cfa            #   DROP DROP             ( )                 \ drop count and pointer
-    .word   RFROM_cfa           #   R>                    ( hdr )             \ retrieve saved header address
+    .word   RFROM_cfa           #   R>                    ( word_buf )        \ retrieve hdr
+
+    # Restore old HERE
+    .word   RFROM_cfa           #   R>                    ( word_buf old_HERE )
+    .word   HERE_cfa
+    .word   STORE_cfa           #   HERE !                ( word_buf )        \ restore old HERE
+
     .word   EXIT_cfa
 
 

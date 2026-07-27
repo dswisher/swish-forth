@@ -30,6 +30,7 @@
 
 # -- Input buffer size ---------------------------------------------------------
 .equ IN_BUF_SIZE, 0xFF          # 256 byte input buffer
+.equ WORD_BUF_SIZE, 36          # max counted string: 1 length + 31 chars + 4 pad
 
 # -- NEXT macro ----------------------------------------------------------------
 #
