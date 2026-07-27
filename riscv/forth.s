@@ -45,6 +45,21 @@ source_len_buf:
 in_buf:
     .space IN_BUF_SIZE          # The input buffer
 
+# EVALUATE save areas — backup for the outer interpreter state
+# when EVALUATE nests the interpreter on a new input string.
+
+    .balign CELL
+eval_save_len_buf:
+    .space CELL                 # saved source_len
+
+    .balign CELL
+eval_save_toin_buf:
+    .space CELL                 # saved >IN
+
+    .balign CELL
+eval_save_in_buf:
+    .space IN_BUF_SIZE          # saved in_buf contents (for copy-back)
+
     .balign CELL
 state_buf:
     .space CELL                 # The complation state: 0 = interpreting, non-zero = compiling
@@ -1190,12 +1205,160 @@ dot_space:
     .word   EXIT_cfa
 
 
+# -- PREPARE-EVAL ----------------------------------------------------------------
+#
+# PREPARE-EVAL  ( c-addr u -- )
+# Save the current outer-interpreter state (in_buf, source_len, >IN) to the
+# EVALUATE save areas, then copy the string at (c-addr, u) into in_buf and
+# set source_len = u, >IN = 0.  After this, INTERPRET will process the new
+# string.  Call RESTORE-SOURCE afterwards to restore the saved state.
+
+    defword "PREPARE-EVAL", PREPARE_EVAL, QUIT_header
+
+    # -- Step 1: Save current state ---------------------------------------------
+    # Copy source_len_buf -> eval_save_len_buf
+    la      t0, source_len_buf
+    lw      t0, 0(t0)
+    la      t1, eval_save_len_buf
+    sw      t0, 0(t1)
+
+    # Copy to_in_buf -> eval_save_toin_buf
+    la      t0, to_in_buf
+    lw      t0, 0(t0)
+    la      t1, eval_save_toin_buf
+    sw      t0, 0(t1)
+
+    # Copy in_buf -> eval_save_in_buf  (IN_BUF_SIZE bytes)
+    la      a1, in_buf               # src
+    la      a2, eval_save_in_buf     # dst
+    li      a3, IN_BUF_SIZE          # count
+pe_save_loop:
+    beqz    a3, pe_save_done
+    lb      t0, 0(a1)
+    sb      t0, 0(a2)
+    addi    a1, a1, 1
+    addi    a2, a2, 1
+    addi    a3, a3, -1
+    j       pe_save_loop
+pe_save_done:
+
+    # -- Step 2: Pop c-addr and u from data stack -------------------------------
+    lw      t3, 0(s3)                # t3 = u (length)
+    lw      t2, 4(s3)                # t2 = c-addr
+    addi    s3, s3, 8                # pop both
+
+    # -- Step 3: Copy the given string into in_buf ------------------------------
+    mv      t4, t3                   # t4 = u (saved for source_len below)
+    la      a1, in_buf               # dst
+    mv      a2, t2                   # src = c-addr
+    mv      a3, t3                   # count = u
+pe_copy_loop:
+    beqz    a3, pe_copy_done
+    lb      t0, 0(a2)
+    sb      t0, 0(a1)
+    addi    a1, a1, 1
+    addi    a2, a2, 1
+    addi    a3, a3, -1
+    j       pe_copy_loop
+pe_copy_done:
+
+    # -- Step 4: Set source_len = u  and  >IN = 0 -------------------------------
+    la      t0, source_len_buf
+    sw      t4, 0(t0)                # source_len = u
+
+    la      t0, to_in_buf
+    sw      zero, 0(t0)              # >IN = 0
+
+    NEXT
+
+
+# -- RESTORE-SOURCE --------------------------------------------------------------
+#
+# RESTORE-SOURCE  ( -- )
+# Restore the outer-interpreter state (in_buf, source_len, >IN) that was
+# saved by a prior PREPARE-EVAL.  Called after INTERPRET to resume normal
+# interactive input.
+
+    defword "RESTORE-SOURCE", RESTORE_SOURCE, PREPARE_EVAL_header
+
+    # Restore source_len
+    la      t0, eval_save_len_buf
+    lw      t0, 0(t0)
+    la      t1, source_len_buf
+    sw      t0, 0(t1)
+
+    # Restore >IN
+    la      t0, eval_save_toin_buf
+    lw      t0, 0(t0)
+    la      t1, to_in_buf
+    sw      t0, 0(t1)
+
+    # Restore in_buf (IN_BUF_SIZE bytes)
+    la      a1, eval_save_in_buf     # src
+    la      a2, in_buf               # dst
+    li      a3, IN_BUF_SIZE          # count
+rs_loop:
+    beqz    a3, rs_done
+    lb      t0, 0(a1)
+    sb      t0, 0(a2)
+    addi    a1, a1, 1
+    addi    a2, a2, 1
+    addi    a3, a3, -1
+    j       rs_loop
+rs_done:
+
+    NEXT
+
+
+# -- BLOCK -----------------------------------------------------------------------
+#
+# BLOCK  ( u -- addr )
+# Return the address of block u in the read-only block region (provided by
+# blocks.s).  Each block is 1024 bytes.  Implemented as an assembly primitive
+# because MUL (needed for 1024 *) is not yet available.
+
+    defword "BLOCK", BLOCK_WORD, RESTORE_SOURCE_header
+    lw      t0, 0(s3)                # t0 = u
+    slli    t0, t0, 10               # t0 = u * 1024  (shift left by 10)
+    la      t1, block_base           # t1 = address of block region
+    add     t0, t0, t1               # t0 = block_base + u*1024
+    sw      t0, 0(s3)                # replace u with result addr
+    NEXT
+
+
+# -- EVALUATE --------------------------------------------------------------------
+#
+# EVALUATE  ( c-addr u -- )
+# Interpret the string at c-addr of length u as Forth source.  Saves the
+# current outer-interpreter state, redirects the input buffer to the given
+# string, runs INTERPRET, then restores the saved state.
+
+    defcolon "EVALUATE", EVALUATE, BLOCK_WORD_header
+    .word   PREPARE_EVAL_cfa
+    .word   INTERPRET_cfa
+    .word   RESTORE_SOURCE_cfa
+    .word   EXIT_cfa
+
+
+# -- LOAD ------------------------------------------------------------------------
+#
+# LOAD  ( u -- )
+# Interpret block u as Forth source.
+
+    defcolon "LOAD", LOAD, EVALUATE_header
+    .word   BLOCK_WORD_cfa
+    .word   LIT_cfa
+    .word   1024
+    .word   EVALUATE_cfa
+    .word   EXIT_cfa
+
+
 # -- BYE ------------------------------------------------------------------------
 #
 # BYE  ( -- )
 # Terminate the Forth system cleanly.
 
-    defword "BYE", BYE, QUIT_header
+    defword "BYE", BYE, LOAD_header
     j       halt_code
 
 

@@ -32,7 +32,7 @@ ASFLAGS  := -march=rv32i -mabi=ilp32 -g
 LDFLAGS  := -m elf32lriscv -T forth.ld --no-relax --no-warn-rwx-segments
 
 TARGET   := forth.elf
-SRCS     := forth.s platform/$(PLATFORM).s
+SRCS     := forth.s platform/$(PLATFORM).s blocks.s
 OBJS     := $(SRCS:.s=.o)
 
 QEMU_FLAGS  := -machine virt -nographic -bios none -kernel $(TARGET)
@@ -53,6 +53,9 @@ $(TARGET): $(OBJS) forth.ld
 	$(LD) $(LDFLAGS) -o $@ $(OBJS)
 
 forth.o: forth.s forth.inc
+	$(AS) $(ASFLAGS) -o $@ $<
+
+blocks.o: blocks.s
 	$(AS) $(ASFLAGS) -o $@ $<
 
 platform/$(PLATFORM).o: platform/$(PLATFORM).s forth.inc

@@ -29,7 +29,7 @@
 .equ RSTACK_SIZE, 0x10000       # 64KB return stack (~16K cells)
 
 # -- Input buffer size ---------------------------------------------------------
-.equ IN_BUF_SIZE, 0xFF          # 256 byte input buffer
+.equ IN_BUF_SIZE, 0x400        # 1024 byte input buffer (room for one block)
 .equ WORD_BUF_SIZE, 36          # max counted string: 1 length + 31 chars + 4 pad
 
 # -- NEXT macro ----------------------------------------------------------------

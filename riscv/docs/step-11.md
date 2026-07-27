@@ -1,4 +1,4 @@
-# Step 11: BLOCK and LOAD
+# Step 11: BLOCK, EVALUATE, and LOAD
 
 ## Goal
 
@@ -24,39 +24,75 @@ is identical; only the linker script changes.
 
 ## Word definitions
 
-### BLOCK  ( u -- addr )
+### PREPARE-EVAL  ( c-addr u -- ) [assembly primitive]
 
-Return the address of block `u` in the read-only block region. No transfer
-from disk — the data is already in memory.
+Save the current outer-interpreter state (input buffer contents,
+`source_len`, and `>IN`) to dedicated backup areas, copy the string at
+`(c-addr, u)` into the input buffer, and set `source_len = u`, `>IN = 0`.
+After this, `INTERPRET` will process the new string as Forth source.
+
+### RESTORE-SOURCE  ( -- ) [assembly primitive]
+
+Restore the outer-interpreter state from the backup areas, returning the
+input buffer to the state it had before the most recent `PREPARE-EVAL`.
+
+### EVALUATE  ( c-addr u -- )
+
+Interpret the string at `c-addr` of length `u` as Forth source:
 
 ```forth
-: BLOCK  ( u -- addr )
-    1024 *  block_base + ;
+: EVALUATE  ( c-addr u -- )
+    PREPARE-EVAL  INTERPRET  RESTORE-SOURCE ;
 ```
 
-`block_base` is a constant assembled into `blocks.s` pointing to the start
-of the block region.
+`EVALUATE` is a colon definition built on two assembly primitives.
+`PREPARE-EVAL` saves the current outer-interpreter state and redirects the
+input buffer to the given string.  `INTERPRET` does the actual
+tokenisation and execution.  `RESTORE-SOURCE` puts the input buffer back
+so the caller can resume normal interactive operation.
+
+### BLOCK  ( u -- addr )
+
+Return the address of block `u` in the read-only block region (provided by
+`blocks.s`).  Each block is 1024 bytes.  Implemented as an assembly
+primitive because `MUL` (needed for `1024 *`) is not yet available in the
+kernel:
+
+```asm
+; BLOCK (u -- addr):  addr = block_base + u * 1024
+lw      t0, 0(s3)            ; t0 = u
+slli    t0, t0, 10           ; t0 = u << 10 = u * 1024
+la      t1, block_base       ; t1 = base address of block region
+add     t0, t0, t1           ; t0 = block_base + u*1024
+sw      t0, 0(s3)            ; replace u with addr
+NEXT
+```
+
+`block_base` is a symbol defined in `blocks.s` pointing to the start of
+the block region in `.rodata`.  A minimal placeholder `blocks.s` (one
+empty 1024-byte block) exists so the kernel builds without `.fth` sources.
 
 ### LOAD  ( u -- )
 
-Interpret block `u` as Forth source.
+Interpret block `u` as Forth source:
 
 ```forth
 : LOAD  ( u -- )
     BLOCK  1024  EVALUATE ;
 ```
 
-`EVALUATE` is the standard word that interprets a string as Forth source.
-It is implemented in a later step.
-
 ### THRU  ( u1 u2 -- )
 
-Convenience word to load a range of blocks.
+Convenience word to load a range of blocks:
 
 ```forth
 : THRU  ( u1 u2 -- )
     1+ SWAP DO  I LOAD  LOOP ;
 ```
+
+Note: `THRU` depends on `DO`/`LOOP`/`I`, which are part of the core word
+set implemented in step 12.  `THRU` is defined in step 11 but will not
+work until those words are available.
 
 ## `tools/mkblocks.py` script
 
@@ -84,13 +120,18 @@ traditional Forth block editor unit). Lines are padded or truncated to fit.
 - [`BLOCK`](https://forth-standard.org/standard/block/BLOCK)
 - [`LOAD`](https://forth-standard.org/standard/block/LOAD)
 - [`THRU`](https://forth-standard.org/standard/block/THRU)
+- [`EVALUATE`](https://forth-standard.org/standard/core/EVALUATE)
 
 ## Files
 
 - `tools/mkblocks.py` — host-side script to generate `blocks.s` (new)
-- `blocks.s` — generated assembly containing block data (generated, not checked in)
-- `forth.s` / `forth.fs` — add `BLOCK`, `LOAD`, `THRU` (update)
-- `Makefile` — add rule to run `mkblocks.py` and assemble `blocks.s` (update)
+- `blocks.s` — generated assembly containing block data (generated, not
+  checked in); a minimal placeholder is provided so the kernel builds
+- `forth.s` / `forth.fs` — add `PREPARE-EVAL`, `RESTORE-SOURCE`, `BLOCK`,
+  `EVALUATE`, `LOAD`, `THRU` (update)
+- `forth.inc` — increase `IN_BUF_SIZE` from 256 to 1024 to accommodate
+  one full block (update)
+- `Makefile` — add `blocks.s` to the source list (update)
 
 ## Verification
 
@@ -101,3 +142,4 @@ defined word executes correctly.
 ## Next Step
 
 [Step 12: Core Word Set in Forth](step-12.md)
+
