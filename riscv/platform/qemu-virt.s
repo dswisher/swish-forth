@@ -69,6 +69,8 @@ platform_getc:
     andi    t1, t1, UART_LSR_DR
     beqz    t1, .Lwait_rx
     lb      a0, UART_RBR(t0)
+    li      t1, 0x03               # Ctrl+C
+    beq     a0, t1, halt_code
     ret
 
 

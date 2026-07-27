@@ -334,16 +334,17 @@ bz_done:
 refill_read:
     beq     a2, a3, refill_done     # buffer full, stop
     call    platform_getc           # a0 = KEY (blocking read)
-    # Echo the character
+    # Echo the character (skip control chars that get their own echo below)
     mv      a5, a0                  # save char
-    call    platform_putc           # echo it
-    mv      a0, a5                  # restore char
+    li      a4, 127                 # backspace / DEL
+    beq     a0, a4, refill_bs
+    li      a4, 8                   # backspace / Ctrl-H
+    beq     a0, a4, refill_bs
     li      a4, 10                  # newline '\n'
     beq     a0, a4, refill_newline
     li      a4, 13                  # carriage return '\r'
     beq     a0, a4, refill_newline
-    li      a4, 127                 # backspace / DEL
-    beq     a0, a4, refill_bs
+    call    platform_putc           # echo printable char
     add     a4, a1, a2              # dest + offset
     sb      a0, 0(a4)               # store char in buffer
     addi    a2, a2, 1               # count++
@@ -352,6 +353,13 @@ refill_read:
 refill_bs:
     beqz    a2, refill_read         # nothing to erase
     addi    a2, a2, -1              # count--
+    # Erase character on screen: BS, space, BS
+    li      a0, 8
+    call    platform_putc
+    li      a0, ' '
+    call    platform_putc
+    li      a0, 8
+    call    platform_putc
     j       refill_read
 
 refill_newline:

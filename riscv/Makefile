@@ -35,7 +35,7 @@ TARGET   := forth.elf
 SRCS     := forth.s platform/$(PLATFORM).s blocks.s
 OBJS     := $(SRCS:.s=.o)
 
-QEMU_FLAGS  := -machine virt -nographic -bios none -kernel $(TARGET)
+QEMU_FLAGS  := -machine virt -nographic -bios none -kernel $(TARGET) -echr 0x1c
 
 GDB_PORT    := 1234
 GDB_REMOTE  := -ex "target remote :$(GDB_PORT)"
@@ -45,7 +45,7 @@ GDB_FLAGS   := -ex "set architecture riscv:rv32" \
 
 # ── Phony targets ──────────────────────────────────────────────────────────────
 
-.PHONY: all run qemu-wait gdb-attach debug disasm clean
+.PHONY: all run qemu-wait gdb-attach debug disasm clean blocks-s
 
 all: $(TARGET)
 
@@ -55,11 +55,18 @@ $(TARGET): $(OBJS) forth.ld
 forth.o: forth.s forth.inc
 	$(AS) $(ASFLAGS) -o $@ $<
 
+blocks.s: tools/mkblocks.py
+	python3 tools/mkblocks.py -o $@ blocks
+
 blocks.o: blocks.s
 	$(AS) $(ASFLAGS) -o $@ $<
 
 platform/$(PLATFORM).o: platform/$(PLATFORM).s forth.inc
 	$(AS) $(ASFLAGS) -o $@ $<
+
+# ── Regenerate blocks.s explicitly (also done automatically during build)
+blocks-s:
+	python3 tools/mkblocks.py -o blocks.s blocks
 
 # Run the binary under QEMU (Ctrl-A X to exit QEMU)
 run: $(TARGET)
@@ -91,5 +98,5 @@ tags:
 
 # Remove build artifacts
 clean:
-	rm -f $(TARGET) $(OBJS)
+	rm -f $(TARGET) $(OBJS) blocks.s
 
