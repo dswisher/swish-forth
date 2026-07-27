@@ -66,6 +66,9 @@ here_buf:
     .globl _start
 
 _start:
+    # Platform-specific initialisation
+    call    platform_init
+
     # Initialise the Forth data stack pointer (s3 = DSP).
     # DSP points to the top item; stack grows downward into dsp_buf.
     la      s3, dsp_top
@@ -91,11 +94,14 @@ invoke_thread:
 test_thread_cfa:
     .word   DOCOL_code
 
-    .word   REFILL_cfa          # reads one line from KEY into input buffer
-    .word   WORD_cfa            # parse first token, copy counted string to HERE
-    .word   DUP_cfa             # dup c-addr of counted string
-    .word   CFETCH_cfa          # fetch length byte
-    .word   SWAP_cfa            # ( length c-addr )  verify with GDB
+    .word   LIT_cfa
+    .word   62                  # '>'
+    .word   EMIT_cfa
+    .word   LIT_cfa
+    .word   32                  # space
+    .word   EMIT_cfa
+
+    .word   QUIT_cfa
 
     .word   EXIT_cfa
 
@@ -309,14 +315,33 @@ bz_done:
 refill_read:
     beq     a2, a3, refill_done     # buffer full, stop
     call    platform_getc           # a0 = KEY (blocking read)
+    # Echo the character
+    mv      a5, a0                  # save char
+    call    platform_putc           # echo it
+    mv      a0, a5                  # restore char
     li      a4, 10                  # newline '\n'
-    beq     a0, a4, refill_done
+    beq     a0, a4, refill_newline
     li      a4, 13                  # carriage return '\r'
-    beq     a0, a4, refill_read     # skip CR, keep reading
+    beq     a0, a4, refill_newline
+    li      a4, 127                 # backspace / DEL
+    beq     a0, a4, refill_bs
     add     a4, a1, a2              # dest + offset
     sb      a0, 0(a4)               # store char in buffer
     addi    a2, a2, 1               # count++
     j       refill_read
+
+refill_bs:
+    beqz    a2, refill_read         # nothing to erase
+    addi    a2, a2, -1              # count--
+    j       refill_read
+
+refill_newline:
+    # Echo a newline pair
+    li      a0, 13
+    call    platform_putc
+    li      a0, 10
+    call    platform_putc
+    j       refill_done
 
 refill_done:
     # Store count in source_len_buf
@@ -795,13 +820,14 @@ find_match:
     addi    t6, t6, 3           # t6 = header + 5 + len + 3
     andi    t6, t6, -4          # t6 = (header + 5 + len + 3) & ~3  (rounded up)
 
-    # Determine flag: bit 6 (0x40) means immediate
+    # Determine flag: bit 6 (0x40) means immediate → return -1
+    # Normal words return 1, not-found returns 0
     andi    t0, t4, 0x40        # test bit 6
     beqz    t0, find_normal
-    li      t1, 1               # immediate: flag = 1
+    li      t1, -1              # immediate: flag = -1
     j       find_return
 find_normal:
-    li      t1, -1              # normal: flag = -1
+    li      t1, 1               # normal: flag = 1
 
 find_return:
     # Replace addr on stack with CFA, push flag
@@ -867,8 +893,10 @@ number_success:
     NEXT
 
 number_fail:
-    addi    s3, s3, -4          # push false on top, leaving addr and len
-    sw      zero, 0(s3)
+    # Clean up addr and len, leaving false (0) on stack
+    addi    s3, s3, -4          # push false on top
+    sw      zero, 0(s3)         # stack: (addr len 0)
+    addi    s3, s3, 8           # pop addr and len, leaving (0)
     NEXT
 
 
@@ -904,6 +932,7 @@ number_fail:
 # suitable for FIND. Returns the address of the counted string.
 
     defcolon "WORD", WORD, BL_header
+    .word   DROP_cfa            # drop delimiter char (PARSE-NAME handles spaces)
     .word   PARSE_NAME_cfa      # PARSE-NAME              ( c-addr u )
     .word   HERE_cfa
     .word   FETCH_cfa
@@ -944,6 +973,210 @@ number_fail:
     .word   EXIT_cfa
 
 
+# -- DOT ------------------------------------------------------------------------
+#
+# .  ( n -- )
+# Display n as a signed decimal number followed by a space.
+# Temporary assembly primitive; will be replaced by <# #S #> TYPE SPACE
+# once number-formatting words are available.
+
+    .section .rodata
+    .balign CELL
+dot_divisors:
+    .word 1000000000
+    .word 100000000
+    .word 10000000
+    .word 1000000
+    .word 100000
+    .word 10000
+    .word 1000
+    .word 100
+    .word 10
+    .word 1
+    .word 0                     # sentinel
+    .text
+
+    defword ".", DOT, WORD_header
+    lw      t2, 0(s3)           # t2 = n
+    addi    s3, s3, 4           # pop
+
+    beqz    t2, dot_zero        # handle zero explicitly
+
+    # Handle negative
+    bgtz    t2, dot_positive
+    li      a0, '-'
+    call    platform_putc
+    sub     t2, zero, t2        # t2 = -n
+
+dot_positive:
+    la      a1, dot_divisors    # a1 = divisor table ptr
+    li      t5, 0               # t5 = started flag
+
+dot_div_loop:
+    lw      t3, 0(a1)           # t3 = divisor
+    beqz    t3, dot_space       # end of table
+
+    li      t4, 0               # t4 = digit count
+dot_count:
+    bltu    t2, t3, dot_emit    # n < divisor: done counting
+    sub     t2, t2, t3          # n -= divisor
+    addi    t4, t4, 1           # digit++
+    j       dot_count
+
+dot_emit:
+    bnez    t5, dot_do_emit     # started: always emit
+    bnez    t4, dot_do_emit     # non-zero digit: start
+    li      t0, 1
+    beq     t3, t0, dot_do_emit # ones place: always emit
+    j       dot_next
+
+dot_do_emit:
+    li      t5, 1               # started = true
+    addi    a0, t4, 48          # a0 = '0' + digit
+    call    platform_putc
+
+dot_next:
+    addi    a1, a1, 4           # advance to next divisor
+    j       dot_div_loop
+
+dot_zero:
+    li      a0, '0'
+    call    platform_putc
+
+dot_space:
+    li      a0, ' '
+    call    platform_putc
+    NEXT
+
+
+# -- OR -------------------------------------------------------------------------
+#
+# OR  ( x1 x2 -- x3 )
+# x3 is the bit-by-bit logical "or" of x1 with x2.
+
+    defword "OR", OR, DOT_header
+    lw      t0, 0(s3)           # t0 = x2
+    addi    s3, s3, 4           # pop
+    lw      t1, 0(s3)           # t1 = x1
+    or      t0, t1, t0          # t0 = x1 | x2
+    sw      t0, 0(s3)
+    NEXT
+
+
+# -- 0< -------------------------------------------------------------------------
+#
+# 0<  ( n -- flag )
+# flag is true (-1) if and only if n is less than zero.
+
+    defword "0<", ZERO_LT, OR_header
+    lw      t0, 0(s3)           # t0 = n
+    srli    t0, t0, 31          # extract sign bit
+    neg     t0, t0              # 0 -> 0, 1 -> -1 (Forth true)
+    sw      t0, 0(s3)
+    NEXT
+
+
+# -- INTERPRET ------------------------------------------------------------------
+#
+# INTERPRET  ( -- )
+# The outer interpreter: read tokens from the input buffer, look each
+# up in the dictionary, and either EXECUTE (interpret mode or immediate
+# word) or compile it (compile mode). Numbers are compiled as literals
+# in compile mode.
+
+    defcolon "INTERPRET", INTERPRET, ZERO_LT_header
+
+    # BEGIN
+    # L0:
+    .word   BL_cfa              # BL
+    .word   WORD_cfa            # WORD
+    .word   DUP_cfa             # DUP
+    .word   CFETCH_cfa          # C@
+    .word   ZERO_BRANCH_cfa     # WHILE (exit loop if empty token)
+    .word   168
+
+    .word   FIND_cfa            # FIND
+    .word   DUP_cfa             # DUP
+    .word   ZERO_BRANCH_cfa     # IF (jump to number if not found)
+    .word   72
+
+    # Found a word — stack: (cfa flag)
+    .word   STATE_cfa           # STATE
+    .word   FETCH_cfa           # @
+    .word   ZERO_EQ_cfa         # 0=
+    .word   OVER_cfa            # OVER
+    .word   ZERO_LT_cfa         # 0<
+    .word   OR_cfa              # OR
+    .word   ZERO_BRANCH_cfa     # IF (compile if not execute)
+    .word   20
+
+    .word   DROP_cfa            # DROP flag before EXECUTE
+    .word   EXECUTE_cfa         # EXECUTE
+    .word   BRANCH_cfa          # BRANCH (skip compile+post → L_repeat)
+    .word   96
+
+    # L_compile:
+    .word   SWAP_cfa            # SWAP — CFA on top
+    .word   COMMA_cfa           # ,  (compile CFA, leaves flag)
+
+    # L_post:
+    .word   DROP_cfa            # DROP (the flag)
+    .word   BRANCH_cfa          # BRANCH (to REPEAT)
+    .word   76
+
+    # L_number:
+    .word   DROP_cfa            # DROP (0 flag from FIND)
+    .word   DUP_cfa             # DUP (c-addr)
+    .word   CFETCH_cfa          # C@ (length)
+    .word   SWAP_cfa            # SWAP
+    .word   LIT_cfa             # 1
+    .word   1
+    .word   PLUS_cfa            # + (skip length byte)
+    .word   SWAP_cfa            # SWAP -> (addr len)
+    .word   NUMBER_cfa          # NUMBER
+    .word   DROP_cfa            # DROP (success flag)
+    .word   STATE_cfa           # STATE
+    .word   FETCH_cfa           # @
+    .word   ZERO_BRANCH_cfa     # IF (skip literal compile if interpreting)
+    .word   20
+
+    .word   LIT_cfa             # compile LIT CFA into current definition
+    .word   LIT_cfa
+    .word   COMMA_cfa           # ,
+    .word   COMMA_cfa           # ,  (compile the number itself)
+
+    # L_repeat:
+    .word   BRANCH_cfa          # REPEAT (back to BEGIN)
+    .word   -184
+
+    # L_end:
+    .word   DROP_cfa            # DROP (discard the 0-length token from WORD)
+    .word   EXIT_cfa
+
+
+# -- QUIT -----------------------------------------------------------------------
+#
+# QUIT  ( -- )
+# QUIT is the top-level infinite loop.
+
+    defcolon "QUIT", QUIT, INTERPRET_header
+    .word   REFILL_cfa
+    .word   DROP_cfa
+    .word   INTERPRET_cfa
+    .word   BRANCH_cfa
+    .word   -16
+    .word   EXIT_cfa
+
+
+# -- BYE ------------------------------------------------------------------------
+#
+# BYE  ( -- )
+# Terminate the Forth system cleanly.
+
+    defword "BYE", BYE, QUIT_header
+    j       halt_code
+
+
 # -- latest_buf ----------------------------------------------------------------
 # A pointer to the last dictionary entry.
 # NOTE - add new dictionary entries ABOVE this
@@ -951,5 +1184,5 @@ number_fail:
     .section .data
     .balign CELL
 latest_buf:                     # points to the last defword in the chain
-    .word   WORD_header
+    .word   BYE_header
 

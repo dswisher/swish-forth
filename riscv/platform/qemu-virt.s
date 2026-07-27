@@ -1,6 +1,7 @@
 # platform/qemu-virt.s - Platform driver for QEMU riscv32 "virt" machine
 #
 # Provides:
+#   platform_init  - initialise UART
 #   platform_putc  - transmit one character (arg in a0, clobbers t0/t1)
 #   platform_getc  - receive one character (result in a0, clobbers t0/t1)
 #   halt_code      - terminate cleanly
@@ -20,6 +21,19 @@
 
 .equ QEMU_EXIT_ADDR, 0x100000    # sifive_test device
 .equ QEMU_EXIT_PASS, 0x5555      # Write this to exit with code 0
+
+# -- platform_init --------------------------------------------------------------
+# Initialise the UART for I/O.
+# Clobbers: t0, t1
+
+    .text
+    .balign 4
+    .globl  platform_init
+platform_init:
+    li      t0, UART_BASE
+    li      t1, 0x03
+    sb      t1, 3(t0)            # LCR = 3 (8 data bits, 1 stop bit, no parity)
+    ret
 
 # -- platform_putc -------------------------------------------------------------
 # Transmit one character.
